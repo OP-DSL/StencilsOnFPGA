@@ -1,3 +1,5 @@
+
+
 static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out, struct data_G data_g){
     unsigned int total_itr = (data_g.total_itr_512 << 1);
 	for (int itr = 0; itr < total_itr; itr++){
@@ -19,15 +21,15 @@ static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out,
 	}
 }
 
-static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint256_dt> &wr_buffer, const int size0, int size1,  const int xdim0_poisson_kernel_stencil, struct data_G data_g){
+static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint256_dt> &wr_buffer, struct data_G data_g){
 
 	short end_index = data_g.end_index;
 
     // Registers to hold data specified by stencil
-	float row_arr3[PORT_WIDTH];
-	float row_arr2[PORT_WIDTH + 2];
-	float row_arr1[PORT_WIDTH];
-	float mem_wr[PORT_WIDTH];
+	float row_arr3[VEC_FACTOR];
+	float row_arr2[VEC_FACTOR + 2];
+	float row_arr1[VEC_FACTOR];
+	float mem_wr[VEC_FACTOR];
 
     // partioning array into individual registers
 	#pragma HLS ARRAY_PARTITION variable=row_arr3 complete dim=1
@@ -45,6 +47,7 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 	#pragma HLS RESOURCE variable=row2_n core=XPM_MEMORY uram latency=2
 	#pragma HLS RESOURCE variable=row3_n core=XPM_MEMORY uram latency=2
 
+	unsigned short sizex = data_g.sizex;
 	unsigned short end_row = data_g.end_row;
 	unsigned short outer_loop_limit = data_g.outer_loop_limit;
 	unsigned int grid_size = data_g.gridsize;
@@ -52,6 +55,7 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 	unsigned short end_row_plus1 = data_g.endrow_plus1;
 	unsigned short end_row_plus2 = data_g.endrow_plus2;
 	unsigned short end_row_minus1 = data_g.endrow_minus1;
+	unsigned int grid_data_size = (data_g.total_itr_512 << 1);
 
     uint256_dt tmp2_f1, tmp2_b1;
     uint256_dt tmp1, tmp2, tmp3;
@@ -60,19 +64,29 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 
     // flattened loop to reduce the inter loop latency
     unsigned short i = 0, j = 0, j_l = 0;
+    unsigned short i_d = 0, j_d = 0;
     for(unsigned int itr = 0; itr < grid_size; itr++) {
         #pragma HLS loop_tripcount min=min_block_x max=max_block_x avg=avg_block_x
         #pragma HLS PIPELINE II=1
 
-        if( j >= end_index){
-            i++;
-            j = 0;
-        }
+    	i = i_d;
+    	j = j_d;
 
-        if(i >= outer_loop_limit){
-            i = 0;
-            j = 0;
-        }
+    	bool cmp_j = (j == end_index -1 );
+    	bool cmp_i = (i == outer_loop_limit -1);
+
+    	if(cmp_j){
+    		j_d = 0;
+    	} else {
+    		j_d++;
+    	}
+
+    	if(cmp_j && cmp_i){
+    		i_d = 1;
+    	} else if(cmp_j){
+    		i_d++;
+    	}
+
 
         tmp1 = row2_n[j_l];
 
@@ -82,8 +96,8 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
         tmp2 = tmp2_f1;
         tmp2_f1 = row1_n[j_l];
 
-
-        bool cond_tmp1 = (i < end_row);
+        // continuous data-flow for all the grids in the batch
+        bool cond_tmp1 = (itr < grid_data_size);
         if(cond_tmp1){
             tmp3 = rd_buffer.read();
         }
@@ -97,8 +111,7 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
         }
 
 
-        vec2arr: for(int k = 0; k < PORT_WIDTH; k++){
-            #pragma HLS loop_tripcount min=port_width max=port_width avg=port_width
+        vec2arr: for(int k = 0; k < VEC_FACTOR; k++){
             data_conv tmp1_u, tmp2_u, tmp3_u;
             tmp1_u.i = tmp1.range(DATATYPE_SIZE * (k + 1) - 1, k * DATATYPE_SIZE);
             tmp2_u.i = tmp2.range(DATATYPE_SIZE * (k + 1) - 1, k * DATATYPE_SIZE);
@@ -109,31 +122,29 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
             row_arr1[k] =  tmp1_u.f;
         }
         data_conv tmp1_o1, tmp2_o2;
-        tmp1_o1.i = tmp2_b1.range(DATATYPE_SIZE * (PORT_WIDTH) - 1, (PORT_WIDTH-1) * DATATYPE_SIZE);
+        tmp1_o1.i = tmp2_b1.range(DATATYPE_SIZE * (VEC_FACTOR) - 1, (VEC_FACTOR-1) * DATATYPE_SIZE);
         tmp2_o2.i = tmp2_f1.range(DATATYPE_SIZE * (0 + 1) - 1, 0 * DATATYPE_SIZE);
         row_arr2[0] = tmp1_o1.f;
-        row_arr2[PORT_WIDTH + 1] = tmp2_o2.f;
+        row_arr2[VEC_FACTOR + 1] = tmp2_o2.f;
 
 
         // stencil computation
         // this loop will be completely unrolled as parent loop is pipelined
-        process: for(short q = 0; q < PORT_WIDTH; q++){
-            #pragma HLS loop_tripcount min=port_width max=port_width avg=port_width
+        process: for(short q = 0; q < VEC_FACTOR; q++){
             short index = (j << SHIFT_BITS) + q;
             float r1 = ( (row_arr2[q])  + (row_arr2[q+2]) );
 
             float r2 = ( row_arr1[q]  + row_arr3[q] );
 
             float f1 = r1 + r2;
-            float f2 = ldexpf(f1, -3); // equvalent to multiplying by 0.125 but use of SHIFT saves DSP units and other device resources
-            float f3 = ldexpf(row_arr2[q+1], -1); // equvalent to multiplying by 0.5
+            float f2 = ldexpf(f1, -3); // Equivalent to multiplying by 0.125 but use of SHIFT saves DSP units and other device resources
+            float f3 = ldexpf(row_arr2[q+1], -1); // Equivalent to multiplying by 0.5
             float result  = f2 + f3;
-            bool change_cond = (index <= 0 || index > size0 || (i == 1) || (i == end_row));
+            bool change_cond = (index <= 0 || index > sizex || (i == 1) || (i == end_row));
             mem_wr[q] = change_cond ? row_arr2[q+1] : result;
         }
 
-        array2vec: for(int k = 0; k < PORT_WIDTH; k++){
-            #pragma HLS loop_tripcount min=port_width max=port_width avg=port_width
+        array2vec: for(int k = 0; k < VEC_FACTOR; k++){
             data_conv tmp;
             tmp.f = mem_wr[k];
             update_j.range(DATATYPE_SIZE * (k + 1) - 1, k * DATATYPE_SIZE) = tmp.i;
@@ -144,6 +155,5 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
             wr_buffer << update_j;
         }
 
-        j++;
     }
 }
