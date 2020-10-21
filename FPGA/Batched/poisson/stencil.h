@@ -58,6 +58,7 @@ struct data_G{
 	unsigned short end_row;
 	unsigned int gridsize;
     unsigned int total_itr_512;
+    unsigned int total_itr_256;
 	unsigned short outer_loop_limit;
 	unsigned short endrow_plus2;
 	unsigned short endrow_plus1;

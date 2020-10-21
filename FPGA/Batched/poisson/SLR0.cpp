@@ -21,6 +21,7 @@ static void read_grid(uint512_dt*  arg0, hls::stream<uint512_dt> &rd_buffer, str
 // data width conversion to support 256 bit width compute pipeline
 static void stream_convert_512_256(hls::stream<uint512_dt> &in, hls::stream<uint256_dt> &out, struct data_G data_g){
 	unsigned int total_itr = data_g.total_itr_512;
+	bool flag = data_g.total_itr_256 & 0x1;
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=2
 		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
@@ -28,19 +29,24 @@ static void stream_convert_512_256(hls::stream<uint512_dt> &in, hls::stream<uint
 		uint256_dt var_l = tmp.range(255,0);
 		uint256_dt var_h = tmp.range(511,256);;
 		out << var_l;
-		out << var_h;
+		if(~flag ||  itr < total_itr -1){
+			out << var_h;
+		}
 	}
 }
 
 // data width conversion to support 512 bit width memory write interface
 static void stream_convert_256_512(hls::stream<uint256_dt> &in, hls::stream<uint512_dt> &out, struct data_G data_g){
 	unsigned int total_itr = data_g.total_itr_512;
+	bool flag = data_g.total_itr_256 & 0x1;
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=2
 		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
 		uint512_dt tmp;
 		tmp.range(255,0) = in.read();
-		tmp.range(511,256) = in.read();
+		if(~flag ||  itr < total_itr -1){
+			tmp.range(511,256) = in.read();
+		}
 		out << tmp;
 	}
 }
@@ -85,7 +91,8 @@ void process_SLR0 (uint512_dt*  arg0, uint512_dt*  arg1, hls::stream <t_pkt> &in
 	data_g.endrow_plus1 = data_g.end_row + 1;
 	data_g.endrow_plus2 = data_g.end_row + 2;
 	data_g.endrow_minus1 = data_g.end_row - 1;
-	data_g.total_itr_512 = data_g.end_row * (data_g.end_index >> 1) * batches;
+	data_g.total_itr_256 = data_g.end_row * data_g.end_index * batches;
+	data_g.total_itr_512 = (data_g.end_row * data_g.end_index * batches + 1) >> 1;
 
 
 	// parallel execution of following modules

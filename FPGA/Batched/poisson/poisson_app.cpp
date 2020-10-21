@@ -54,11 +54,12 @@ int main(int argc, char **argv)
   data_g.act_size_y = data_g.logical_size_y + 2;
 
   // padding each row such that it is multiple of Vectorisation factor
-  data_g.grid_size_x = (data_g.act_size_x % 16) != 0 ? (data_g.act_size_x/16 +1) * 16 : data_g.act_size_x+2;
+  data_g.grid_size_x = (data_g.act_size_x % 8) != 0 ? (data_g.act_size_x/8 +1) * 8 : data_g.act_size_x;
   data_g.grid_size_y = data_g.act_size_y;
   
   // allocating memory for host program and FPGA buffers
   unsigned int data_size_bytes = data_g.grid_size_x * data_g.grid_size_y * sizeof(float)*data_g.batch;
+  data_size_bytes = (data_size_bytes % 16 != 0) ? (data_size_bytes/16 +1)*16 : data_size_bytes;
   if(data_size_bytes >= 4000000000){
 	  printf("Maximum buffer size is exceeded!\n");
 	  return 0;

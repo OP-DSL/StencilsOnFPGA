@@ -1,7 +1,7 @@
 
 
 static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out, struct data_G data_g){
-    unsigned int total_itr = (data_g.total_itr_512 << 1);
+    unsigned int total_itr = data_g.total_itr_256;
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=1
 		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
@@ -11,7 +11,7 @@ static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out,
 }
 
 static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out, struct data_G data_g){
-	unsigned int total_itr = (data_g.total_itr_512 << 1);
+	unsigned int total_itr = data_g.total_itr_256;
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=1
 		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
@@ -55,7 +55,7 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 	unsigned short end_row_plus1 = data_g.endrow_plus1;
 	unsigned short end_row_plus2 = data_g.endrow_plus2;
 	unsigned short end_row_minus1 = data_g.endrow_minus1;
-	unsigned int grid_data_size = (data_g.total_itr_512 << 1);
+	unsigned int grid_data_size = data_g.total_itr_256;
 
     uint256_dt tmp2_f1, tmp2_b1;
     uint256_dt tmp1, tmp2, tmp3;

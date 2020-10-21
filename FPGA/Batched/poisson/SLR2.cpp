@@ -25,7 +25,8 @@ void process_SLR (hls::stream <t_pkt> &in, hls::stream <t_pkt> &out,
 	data_g.endrow_plus1 = data_g.end_row + 1;
 	data_g.endrow_plus2 = data_g.end_row + 2;
 	data_g.endrow_minus1 = data_g.end_row - 1;
-	data_g.total_itr_512 = data_g.end_row * (data_g.end_index >> 1) * batches;
+	data_g.total_itr_256 = data_g.end_row * data_g.end_index * batches;
+	data_g.total_itr_512 = (data_g.end_row * data_g.end_index * batches + 1) >> 1;
 
 	#pragma HLS dataflow
     axis2_fifo256(in, streamArray[0], data_g);

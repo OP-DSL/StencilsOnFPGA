@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include "stencil_cpu.h"
 
 
@@ -30,6 +31,12 @@ double square_error(float* current, float* next, struct Grid_Parameter data_g){
     for(int i = 0; i < data_g.act_size_y; i++){
       for(int j = 0; j < data_g.act_size_x; j++){
     	int index = i*data_g.grid_size_x + j+offset;
+    	float v1 = (next[index]);
+    	float v2 = (current[index]);
+    	if(fabs(v1-v2)/(fabs(v1) + fabs(v2)) >= 0.000001 && (fabs(v1) + fabs(v2)) > 0.000001 ){
+    		printf("i:%d j:%d v1:%f v2:%f\n", v1, v2, i, j);
+    	}
+
         sum += next[index]*next[index] - current[index]*current[index];
       }
     }

@@ -26,7 +26,8 @@ void process_SLR (hls::stream <t_pkt> &in1, hls::stream <t_pkt> &out1, hls::stre
 	data_g.endrow_plus1 = data_g.end_row + 1;
 	data_g.endrow_plus2 = data_g.end_row + 2;
 	data_g.endrow_minus1 = data_g.end_row - 1;
-	data_g.total_itr_512 = data_g.end_row * (data_g.end_index >> 1) * batches;
+	data_g.total_itr_256 = data_g.end_row * data_g.end_index * batches;
+	data_g.total_itr_512 = (data_g.end_row * data_g.end_index * batches + 1) >> 1;
 
 	// pipeline is broken into two stages to help SLR crossing through
 	// higher register depth for both of two AXI stream interfaces
