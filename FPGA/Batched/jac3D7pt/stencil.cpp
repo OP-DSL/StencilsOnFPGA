@@ -1,3 +1,5 @@
+#include "stencil.h"
+
 template <typename T>
 static T register_it(T x){
 	#pragma HLS inline off
@@ -52,13 +54,13 @@ static void process_tile( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 	unsigned short batches = data_g.batches;
 	unsigned int limit_read = data_g.gridsize_da;
 
-	float s_1_1_2_arr[PORT_WIDTH];
-	float s_1_2_1_arr[PORT_WIDTH];
-	float s_1_1_1_arr[PORT_WIDTH+2];
-	float s_1_0_1_arr[PORT_WIDTH];
-	float s_1_1_0_arr[PORT_WIDTH];
+	float s_1_1_2_arr[VEC_FACTOR];
+	float s_1_2_1_arr[VEC_FACTOR];
+	float s_1_1_1_arr[VEC_FACTOR+2];
+	float s_1_0_1_arr[VEC_FACTOR];
+	float s_1_1_0_arr[VEC_FACTOR];
 
-	float mem_wr[PORT_WIDTH];
+	float mem_wr[VEC_FACTOR];
 
 	#pragma HLS ARRAY_PARTITION variable=s_1_1_2_arr complete dim=1
 	#pragma HLS ARRAY_PARTITION variable=s_1_2_1_arr complete dim=1
@@ -141,8 +143,7 @@ static void process_tile( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 			j_l = 0;
 		}
 
-		vec2arr: for(int k = 0; k < PORT_WIDTH; k++){
-			#pragma HLS loop_tripcount min=port_width max=port_width avg=port_width
+		vec2arr: for(int k = 0; k < VEC_FACTOR; k++){
 			data_conv s_1_1_2_u, s_1_2_1_u, s_1_1_1_u, s_1_0_1_u, s_1_1_0_u;
 			s_1_1_2_u.i = s_1_1_2.range(DATATYPE_SIZE * (k + 1) - 1, k * DATATYPE_SIZE);
 			s_1_2_1_u.i = s_1_2_1.range(DATATYPE_SIZE * (k + 1) - 1, k * DATATYPE_SIZE);
@@ -158,15 +159,14 @@ static void process_tile( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 
 		}
 		data_conv tmp1_o1, tmp2_o2;
-		tmp1_o1.i = s_1_1_1_b.range(DATATYPE_SIZE * (PORT_WIDTH) - 1, (PORT_WIDTH-1) * DATATYPE_SIZE);
+		tmp1_o1.i = s_1_1_1_b.range(DATATYPE_SIZE * (VEC_FACTOR) - 1, (VEC_FACTOR-1) * DATATYPE_SIZE);
 		tmp2_o2.i = s_1_1_1_f.range(DATATYPE_SIZE * (0 + 1) - 1, 0 * DATATYPE_SIZE);
 		s_1_1_1_arr[0] = tmp1_o1.f;
-		s_1_1_1_arr[PORT_WIDTH + 1] = tmp2_o2.f;
+		s_1_1_1_arr[VEC_FACTOR + 1] = tmp2_o2.f;
 
 
 		unsigned short y_index = j + offset_y;
-		process: for(short q = 0; q < PORT_WIDTH; q++){
-			#pragma HLS loop_tripcount min=port_width max=port_width avg=port_width
+		process: for(short q = 0; q < VEC_FACTOR; q++){
 			short index = (k << SHIFT_BITS) + q + offset_x;
 			float r1_1_2 =  s_1_1_2_arr[q] * (0.02f);
 			float r1_2_1 =  s_1_2_1_arr[q] * (0.04f);
@@ -192,8 +192,7 @@ static void process_tile( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
 			mem_wr[q] = change_cond ? s_1_1_1_arr[q+1] : result;
 		}
 
-		array2vec: for(int k = 0; k < PORT_WIDTH; k++){
-			#pragma HLS loop_tripcount min=port_width max=port_width avg=port_width
+		array2vec: for(int k = 0; k < VEC_FACTOR; k++){
 			data_conv tmp;
 			tmp.f = mem_wr[k];
 			update_j.range(DATATYPE_SIZE * (k + 1) - 1, k * DATATYPE_SIZE) = tmp.i;

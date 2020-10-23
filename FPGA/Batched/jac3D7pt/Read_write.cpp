@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include "../src/stencil.cpp"
 
+
+// coalesced memory access at 512 bit to get maximum out of memory bandwidth
+// Single pipelined loop below will be mapped to single memory transfer
+// which will further split into multiple transfers by axim module.
 static void read_tile(uint512_dt*  arg0, hls::stream<uint512_dt> &rd_buffer, struct data_G data_g){
 
 	unsigned int total_itr = data_g.total_itr;
@@ -17,6 +21,8 @@ static void read_tile(uint512_dt*  arg0, hls::stream<uint512_dt> &rd_buffer, str
 }
 
 
+// data width conversion from 512 bit to 256 bit width of
+// compute pipeline
 static void stream_convert_512_256(hls::stream<uint512_dt> &in, hls::stream<uint256_dt> &out, struct data_G data_g){
 	unsigned int total_itr = data_g.total_itr;
 	for(unsigned int itr = 0; itr < total_itr; itr++){
@@ -25,45 +31,29 @@ static void stream_convert_512_256(hls::stream<uint512_dt> &in, hls::stream<uint
 			uint256_dt var_l = tmp.range(255,0);
 			uint256_dt var_h = tmp.range(511,256);;
 			out << var_l;
-			out << var_h;
+			if(!data_g.last_half ||  itr < total_itr -1){
+				out << var_h;
+			}
 	}
 }
 
-
-
+// data width conversion to support 512 bit width memory write interface
 static void stream_convert_256_512(hls::stream<uint256_dt> &in, hls::stream<uint512_dt> &out, struct data_G data_g){
 	unsigned int total_itr = data_g.total_itr;
 	for(unsigned int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=2
 		uint512_dt tmp;
 		tmp.range(255,0) = in.read();
-		tmp.range(511,256) = in.read();
+		if(!data_g.last_half ||  itr < total_itr -1){
+			tmp.range(511,256) = in.read();
+		}
 		out << tmp;
 	}
 }
 
-//static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out, unsigned int tot_itr){
-//
-//	for (int itr = 0; itr < tot_itr; itr++){
-//		#pragma HLS PIPELINE II=1
-//		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
-//		t_pkt tmp = in.read();
-//		out << tmp.data;
-//	}
-//}
-
-//static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out, unsigned int tot_itr){
-//
-//	for (int itr = 0; itr < tot_itr; itr++){
-//		#pragma HLS PIPELINE II=1
-//		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
-//		t_pkt tmp;
-//		tmp.data = in.read();
-//		out.write(tmp);
-//	}
-//}
-//
-
+// coalesced memory write using 512 bit to get maximum out of memory bandwidth
+// Single pipelined loop below will be mapped to single memory transfer
+// which will further split into multiple transfers by axim module.
 static void write_tile(uint512_dt*  arg1, hls::stream<uint512_dt> &wr_buffer, struct data_G data_g){
 	unsigned int total_itr = data_g.total_itr;
 	for(unsigned int itr = 0; itr < total_itr; itr++){
@@ -109,7 +99,8 @@ static void process_ReadWrite (uint512_dt*  arg0_0, uint512_dt*  arg1_0,
 	unsigned int tile_plane_size = (data_g.tile_x >> SHIFT_BITS) * data_g.tile_y;
 	unsigned int totol_iter = register_it<unsigned int>(tile_plane_size * data_g.grid_sizez) * batches;
 
-	data_g.total_itr = (totol_iter >> 1);
+	data_g.last_half = totol_iter & 0x1;
+	data_g.total_itr = ((totol_iter+1) >> 1);
 
 
 	#pragma HLS dataflow
@@ -117,7 +108,9 @@ static void process_ReadWrite (uint512_dt*  arg0_0, uint512_dt*  arg1_0,
 	read_tile(arg0_0, rd_bufferArr[0], data_g);
 	stream_convert_512_256(rd_bufferArr[0], streamArray[0], data_g);
 
+	// sending data out for compute kernel
 	fifo256_2axis(streamArray[0], out, totol_iter);
+	// receiving data from compute kernel
 	axis2_fifo256(in, streamArray[31], totol_iter);
 
 	stream_convert_256_512(streamArray[31],wr_bufferArr[0], data_g);
@@ -139,6 +132,9 @@ static void process_ReadWrite_dataflow (uint512_dt*  arg0_0, uint512_dt*  arg1_0
 
 //-DHOST_CODE_OPT -DLOCAL_BUF_OPT -DDF_OPT -DFP_OPT
 
+
+// kernel for reading and writing from memory
+// it resides in SLR0 which is close to HBM memory and DDR4[0]
 
 extern "C" {
 void stencil_Read_Write(

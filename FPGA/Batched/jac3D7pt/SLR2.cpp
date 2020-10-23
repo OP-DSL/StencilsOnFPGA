@@ -2,16 +2,8 @@
 #include <hls_stream.h>
 #include <ap_axi_sdata.h>
 #include <math.h>
-#include <stencil.h>
-#include <stencil.cpp>
-
-
-
-//--------------------------------------------------------------------------------------------------------------------------
-//-------------------------------------------------------- SLR crossing SLR1 -----------------------------------------------
-//--------------------------------------------------------------------------------------------------------------------------
-
-
+#include "stencil.h"
+#include "stencil.cpp"
 
 
 void process_SLR (hls::stream <t_pkt> &in, hls::stream <t_pkt> &out,
@@ -52,25 +44,18 @@ void process_SLR (hls::stream <t_pkt> &in, hls::stream <t_pkt> &out,
 	#pragma HLS dataflow
     axis2_fifo256(in, streamArray[0], gridsize_da);
 
-    process_tile( streamArray[0], streamArray[1], data_g);
-    process_tile( streamArray[1], streamArray[2], data_g);
-    process_tile( streamArray[2], streamArray[3], data_g);
-    process_tile( streamArray[3], streamArray[4], data_g);
+    for(int i = 0; i < P_STAGE_SLR0; i++){
+		#pragma HLS unroll
+    	process_tile( streamArray[i], streamArray[i+1], data_g);
+    }
 
-    process_tile( streamArray[4], streamArray[5], data_g);
-    process_tile( streamArray[5], streamArray[6], data_g);
-    process_tile( streamArray[6], streamArray[7], data_g);
-    process_tile( streamArray[7], streamArray[8], data_g);
-
-    process_tile( streamArray[8], streamArray[9], data_g);
-    process_tile( streamArray[9], streamArray[10], data_g);
-//    process_tile( streamArray[10], streamArray[11], data_g);
-
-
-	fifo256_2axis(streamArray[10], out, gridsize_da);
+	fifo256_2axis(streamArray[P_STAGE_SLR0], out, gridsize_da);
 
 
 }
+
+// compute kernel pipeline in SLR2
+// this only communicate with compute kernel in SLR0
 
 extern "C" {
 void stencil_SLR2(
@@ -95,10 +80,7 @@ void stencil_SLR2(
 	#pragma HLS INTERFACE s_axilite port = count bundle = control
 	#pragma HLS INTERFACE s_axilite port = return bundle = control
 
-
-
-
-
+	// unrolling iterative loop
 	for(unsigned short itr =  0; itr < 2*count ; itr++){
 		process_SLR( in, out, xdim0, sizex, sizey, sizez, batches);
 

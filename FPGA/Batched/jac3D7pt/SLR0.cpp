@@ -43,26 +43,21 @@ static void process_SLR (hls::stream <t_pkt> &in, hls::stream <t_pkt> &out,
 	#pragma HLS dataflow
     axis2_fifo256(in, streamArray[0], gridsize_da);
 
-    process_tile( streamArray[0], streamArray[1], data_g);
-    process_tile( streamArray[1], streamArray[2], data_g);
-    process_tile( streamArray[2], streamArray[3], data_g);
-    process_tile( streamArray[3], streamArray[4], data_g);
+    for(int i = 0; i < P_STAGE_SLR0; i++){
+		#pragma HLS unroll
+    	process_tile( streamArray[i], streamArray[i+1], data_g);
+    }
 
-    process_tile( streamArray[4], streamArray[5], data_g);
-    process_tile( streamArray[5], streamArray[6], data_g);
-    process_tile( streamArray[6], streamArray[7], data_g);
-    process_tile( streamArray[7], streamArray[8], data_g);
-
-    process_tile( streamArray[8], streamArray[9], data_g);
-//    process_tile( streamArray[9], streamArray[10], data_g);
-
-
-	fifo256_2axis(streamArray[9], out, gridsize_da);
+	fifo256_2axis(streamArray[P_STAGE_SLR0], out, gridsize_da);
 
 }
 
 
 //-DHOST_CODE_OPT -DLOCAL_BUF_OPT -DDF_OPT -DFP_OPT
+
+// compute kernel pipeline for SLR0
+// this communicate with Read_write kernel in SLR0 and compute
+// kernel in SLR1
 
 extern "C" {
 void stencil_SLR0(
@@ -88,10 +83,7 @@ void stencil_SLR0(
 	#pragma HLS INTERFACE s_axilite port = return bundle = control
 
 
-
-
-
-
+	// unrolling iterative loop
 	for(unsigned short itr =  0; itr < 2*count ; itr++){
 		process_SLR( in, out, xdim0, sizex, sizey, sizez, batches);
 	}

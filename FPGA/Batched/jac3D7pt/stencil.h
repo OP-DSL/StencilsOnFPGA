@@ -4,6 +4,8 @@
 #include <math.h>
 #include <stdio.h>
 
+#ifndef __STENCIL_H__
+#define __STENCIL_H__
 
 typedef ap_uint<512> uint512_dt;
 typedef ap_uint<256> uint256_dt;
@@ -14,13 +16,13 @@ typedef ap_axiu<32,0,0,0> t_pkt_32;
 #define MAX_DEPTH_16 (MAX_SIZE_X/16)
 
 //user function
-#define PORT_WIDTH 8
+#define VEC_FACTOR 8
 #define SHIFT_BITS 3
 #define DATATYPE_SIZE 32
-//#define BEAT_SHIFT_BITS 10
-#define BURST_LEN MAX_DEPTH_16
 
-#define STAGES 2
+#define P_STAGE_SLR0 9
+#define P_STAGE_SLR1 9
+#define P_STAGE_SLR2 9
 
 const int max_size_y = MAX_SIZE_X;
 const int min_size_y = 20;
@@ -38,7 +40,7 @@ const int max_grid_2 = (max_block_x * max_size_y * max_size_y)/2;
 const int min_grid_2 = (min_block_x * min_size_y * min_size_y)/2;
 const int avg_grid_2 = (avg_block_x * avg_size_y * avg_size_y)/2;
 
-const int port_width  = PORT_WIDTH;
+const int vec_factor  = VEC_FACTOR;
 const int max_depth_16 = MAX_DEPTH_16 * 4;
 const int max_depth_8 = MAX_DEPTH_16 * 4;
 const int max_depth_xy = max_block_x * MAX_SIZE_X;
@@ -68,6 +70,9 @@ struct data_G{
 	unsigned int line_diff;
 	unsigned short outer_loop_limit;
 	unsigned int total_itr;
+	bool last_half;
 	unsigned short batches;
 };
+
+#endif
 
