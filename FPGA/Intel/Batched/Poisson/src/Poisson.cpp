@@ -49,7 +49,7 @@ struct pipeS{
 
   template <size_t idx>
   struct Pipes{
-    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8>;
+    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8000000>;
   };
 
   template <size_t idx>
@@ -81,13 +81,13 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 
 
 
-void stencil_read(queue &q, buffer<float, 1> &in_buf, int nx, int ny){
+void stencil_read(queue &q, buffer<float, 1> &in_buf, int nx, int ny, int nz){
       event e1 = q.submit([&](handler &h) {
       accessor in(in_buf, h, read_only);
       h.single_task<class producer>([=] () [[intel::kernel_args_restrict]]{
 
         [[intel::initiation_interval(1)]]
-        for(int i = 0; i < (nx*ny)/8; i++){
+        for(int i = 0; i < (nx*ny*nz)/8; i++){
           struct dPath vec;
           #pragma unroll 8
           for(int v = 0; v < 8; v++){
@@ -102,22 +102,44 @@ void stencil_read(queue &q, buffer<float, 1> &in_buf, int nx, int ny){
 
 template <size_t idx>  struct struct_idX;
 template<int idx, int IdX>
-void stencil_compute(queue &q, unsigned short nx, unsigned short ny){
+void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned short nz){
     event e2 = q.submit([&](handler &h) {
     std::string instance_name="compute"+std::to_string(idx);
     h.single_task<class struct_idX<IdX>>([=] () [[intel::kernel_args_restrict]]{
     
-    int total_itr = (nx>>3)*(ny+1);
+    int total_itr = (nx>>3)*(ny+1)*nz;
     struct dPath s_1_2, s_2_1, s_1_1, s_0_1, s_1_0;
     struct dPath wind1[1024], wind2[1024];
     struct dPath vec_wr;
     [[intel::fpga_register]] float mid_row[10];
     unsigned short i_l = 0;
 
+
+    unsigned short id = 0, jd = 0, kd = 0;
+    unsigned int mesh_size = (nx*ny)>>3;
+    unsigned short rEnd = (nx>>3)-1;
     [[intel::initiation_interval(1)]]
     for(int itr = 0; itr < total_itr; itr++){
-      unsigned short i = itr % (nx>>3);
-      unsigned short j = itr / (nx>>3);
+      unsigned short i = id; // itr % rEnd; //id;
+      unsigned short j = jd; //itr / rEnd ;///jd;
+      unsigned short k = kd;
+
+      if(i == rEnd){
+        id = 0;
+      } else {
+        id++;
+      }
+
+      if(i == rEnd && j == ny){
+        jd = 0;
+      } else if(i == rEnd){
+        jd++;
+      }
+
+      if(i == rEnd && j == ny){
+        kd++;
+      }
+
 
 
       s_1_0 = wind2[i_l];
@@ -128,7 +150,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny){
       s_1_1 = s_2_1;
       s_2_1 = wind1[i_l];
 
-      if(j < ny){
+      if(j < ny && k < nz){
         s_1_2 = pipeS::PipeAt<idx>::read();
       }
 
@@ -162,14 +184,14 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny){
 }
 
 template <int idx>
-void stencil_write(queue &q, buffer<float, 1> &out_buf, int nx, int ny, double &kernel_time){
+void stencil_write(queue &q, buffer<float, 1> &out_buf, int nx, int ny, int nz, double &kernel_time){
     event e3 = q.submit([&](handler &h) {
     accessor out(out_buf, h, write_only);
     std::string instance_name="consumer"+std::to_string(idx);
     h.single_task<class instance_name>([=] () [[intel::kernel_args_restrict]]{
       [[intel::initiation_interval(1)]]
 
-      for(int i = 0; i < (nx*ny)/8; i++){
+      for(int i = 0; i < (nx*ny*nz)/8; i++){
         struct dPath vec = pipeS::PipeAt<idx>::read();
         #pragma unroll 8
         for(int v = 0; v < 8; v++){
@@ -187,16 +209,16 @@ void stencil_write(queue &q, buffer<float, 1> &out_buf, int nx, int ny, double &
 
 
 template <int N, int n> struct loop {
-  static void instantiate(queue &q, int nx, int ny){
-    loop<N-1, n-1>::instantiate(q, nx, ny);
-    stencil_compute<N-1, n-1>(q, nx, ny);
+  static void instantiate(queue &q, int nx, int ny, int nz){
+    loop<N-1, n-1>::instantiate(q, nx, ny, nz);
+    stencil_compute<N-1, n-1>(q, nx, ny, nz);
   }
 };
 
 template<> 
 struct loop<1, 1>{
-  static void instantiate(queue &q, int nx, int ny){
-    stencil_compute<0, 0>(q, nx, ny);
+  static void instantiate(queue &q, int nx, int ny, int nz){
+    stencil_compute<0, 0>(q, nx, ny, nz);
   }
 };
 
@@ -206,7 +228,7 @@ struct loop<1, 1>{
 //************************************
 // Vector add in DPC++ on device: returns sum in 4th parameter "sum_parallel".
 //************************************
-void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int nx, int ny) {
+void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int nx, int ny, int nz) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{input.size()};
   int vec_size = input.size();
@@ -226,21 +248,19 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
     for(int itr = 0; itr < n_iter; itr++){
 
       // reading from memory
-      stencil_read(q, in_buf, nx, ny);
-      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny);
-  
+      stencil_read(q, in_buf, nx, ny, nz);
+      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz);
       //write back to memory
-      stencil_write<UFACTOR>(q, out_buf, nx, ny, kernel_time);
+      stencil_write<UFACTOR>(q, out_buf, nx, ny, nz, kernel_time);
       q.wait();
 
       
       // reading from memory
-      stencil_read(q, out_buf, nx, ny);
-
+      stencil_read(q, out_buf, nx, ny, nz);
       // computation
-      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny);
+      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz);
       //write back to memory
-      stencil_write<UFACTOR>(q, in_buf, nx, ny, kernel_time);
+      stencil_write<UFACTOR>(q, in_buf, nx, ny, nz, kernel_time);
       
 
       q.wait();
@@ -268,11 +288,12 @@ void InitializeVector(IntVector &a) {
 int main(int argc, char* argv[]) {
 
   int n_iter = 1;
-  int nx = 128, ny = 128;
+  int nx = 128, ny = 128, nz=2;
   // Change vector_size if it was passed as argument
   if (argc > 1) n_iter = std::stoi(argv[1]);
   if (argc > 2) nx = std::stoi(argv[2]);
   if (argc > 3) ny = std::stoi(argv[3]);
+  if (argc > 4) nz = std::stoi(argv[4]);
 
   nx = (nx % 8 == 0 ? nx : (nx/8+1)*8);
   // Create device selector for the device of your interest.
@@ -289,10 +310,10 @@ int main(int argc, char* argv[]) {
 
   // Create vector objects with "vector_size" to store the input and output data.
   IntVector in_vec, in_vec_h, out_sequential, out_parallel;
-  in_vec.resize(nx*ny);
-  in_vec_h.resize(nx*ny);
-  out_sequential.resize(nx*ny);
-  out_parallel.resize(nx*ny);
+  in_vec.resize(nx*ny*nz);
+  in_vec_h.resize(nx*ny*nz);
+  out_sequential.resize(nx*ny*nz);
+  out_parallel.resize(nx*ny*nz);
 
   // Initialize input vectors with values from 0 to vector_size - 1
   InitializeVector(in_vec);
@@ -311,7 +332,7 @@ int main(int argc, char* argv[]) {
 
     // Vector addition in DPC++
     
-    stencil_comp(q, in_vec, out_parallel, n_iter, nx, ny);
+    stencil_comp(q, in_vec, out_parallel, n_iter, nx, ny, nz);
 
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
@@ -323,28 +344,31 @@ int main(int argc, char* argv[]) {
   // Compute the sum of two vectors in sequential for validation.
 
   for(int itr= 0; itr < UFACTOR*n_iter; itr++){
-
-    for(int j = 0; j < ny; j++){
-      for(int i = 0; i < nx; i++){
-        int ind = j*nx + i;
-         
-        if(i > 0 && i < nx -1 && j > 0 && j < ny -1){
-          out_sequential.at(ind) = in_vec_h.at(ind-1)*(0.125f) + in_vec_h.at(ind)*0.5f + in_vec_h.at(ind+1)*(0.125f) + in_vec_h.at(ind-nx)*(0.125f) + in_vec_h.at(ind+nx)*(0.125f);
-        } else {
-          out_sequential.at(ind) = 5.0f;
+    for(int k = 0; k < nz; k++){
+      for(int j = 0; j < ny; j++){
+        for(int i = 0; i < nx; i++){
+          int ind = k*nx*ny + j*nx + i;
+           
+          if(i > 0 && i < nx -1 && j > 0 && j < ny -1){
+            out_sequential.at(ind) = in_vec_h.at(ind-1)*(0.125f) + in_vec_h.at(ind)*0.5f + in_vec_h.at(ind+1)*(0.125f) + in_vec_h.at(ind-nx)*(0.125f) + in_vec_h.at(ind+nx)*(0.125f);
+          } else {
+            out_sequential.at(ind) = 5.0f;
+          }
         }
       }
     }
 
 
-    for(int j = 0; j < ny; j++){
-      for(int i = 0; i < nx; i++){
-        int ind = j*nx + i;
-         
-        if(i > 0 && i < nx -1 && j > 0 && j < ny -1){
-          in_vec_h.at(ind) = out_sequential.at(ind-1)*(0.125f) + out_sequential.at(ind)*0.5f + out_sequential.at(ind+1)*(0.125f) + out_sequential.at(ind-nx)*(0.125f) + out_sequential.at(ind+nx)*(0.125f);
-        } else {
-          in_vec_h.at(ind) = 5.0f;
+    for(int k = 0; k < nz; k++){
+      for(int j = 0; j < ny; j++){
+        for(int i = 0; i < nx; i++){
+          int ind = k*nx*ny + j*nx + i;
+           
+          if(i > 0 && i < nx -1 && j > 0 && j < ny -1){
+            in_vec_h.at(ind) = out_sequential.at(ind-1)*(0.125f) + out_sequential.at(ind)*0.5f + out_sequential.at(ind+1)*(0.125f) + out_sequential.at(ind-nx)*(0.125f) + out_sequential.at(ind+nx)*(0.125f);
+          } else {
+            in_vec_h.at(ind) = 5.0f;
+          }
         }
       }
     }
@@ -357,14 +381,16 @@ int main(int argc, char* argv[]) {
   // for (size_t i = 0; i < out_sequential.size(); i++)
   //   out_sequential.at(i) = in_vec.at(i) + 50;
 
-  // Verify that the two vectors are equal.  
-  for(int j = 0; j < ny; j++){
-    for(int i = 0; i < nx; i++){
-      int ind = j*nx + i;
-      float chk = fabs((in_vec_h.at(ind) - in_vec.at(ind))/(in_vec_h.at(ind)));
-      if(chk > 0.00001 && fabs(in_vec_h.at(ind)) > 0.00001){
-        std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind) << " " << in_vec.at(ind) <<  std::endl;
-        return -1;
+  // Verify that the two vectors are equal. 
+  for(int k = 0; k < nz; k++){ 
+    for(int j = 0; j < ny; j++){
+      for(int i = 0; i < nx; i++){
+        int ind = k*nx*ny + j*nx + i;
+        float chk = fabs((in_vec_h.at(ind) - in_vec.at(ind))/(in_vec_h.at(ind)));
+        if(chk > 0.00001 && fabs(in_vec_h.at(ind)) > 0.00001){
+          std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind) << " " << in_vec.at(ind) <<  std::endl;
+          return -1;
+        }
       }
     }
   }
