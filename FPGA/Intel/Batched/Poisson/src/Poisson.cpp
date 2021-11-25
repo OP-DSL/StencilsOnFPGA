@@ -107,7 +107,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
     std::string instance_name="compute"+std::to_string(idx);
     h.single_task<class struct_idX<IdX>>([=] () [[intel::kernel_args_restrict]]{
     
-    int total_itr = (nx>>3)*(ny+1)*nz;
+    int total_itr = ((nx>>3)*(ny*nz+1));
     struct dPath s_1_2, s_2_1, s_1_1, s_0_1, s_1_0;
     struct dPath wind1[1024], wind2[1024];
     struct dPath vec_wr;
@@ -115,7 +115,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
     unsigned short i_l = 0;
 
 
-    unsigned short id = 0, jd = 0, kd = 0;
+    short id = 0, jd = 0, kd = 0;
     unsigned int mesh_size = (nx*ny)>>3;
     unsigned short rEnd = (nx>>3)-1;
     [[intel::initiation_interval(1)]]
@@ -131,7 +131,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
       }
 
       if(i == rEnd && j == ny){
-        jd = 0;
+        jd = 1;
       } else if(i == rEnd){
         jd++;
       }
@@ -150,7 +150,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
       s_1_1 = s_2_1;
       s_2_1 = wind1[i_l];
 
-      if(j < ny && k < nz){
+      if(itr < (nx>>3)*ny*nz){
         s_1_2 = pipeS::PipeAt<idx>::read();
       }
 
@@ -174,7 +174,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
         float val = mid_row[v]*(0.125f) +mid_row[v+1]*0.5f + mid_row[v+2]*(0.125f) + s_1_0.data[v]*(0.125f) + s_1_2.data[v]*(0.125f);
         vec_wr.data[v] = (i_ind > 0 && i_ind < nx-1 && j > 1 && j < ny ) ? val : 5;
       }
-      if(j > 0){
+      if(itr >= (nx>>3)){
         pipeS::PipeAt<idx+1>::write(vec_wr);
       }
     }
