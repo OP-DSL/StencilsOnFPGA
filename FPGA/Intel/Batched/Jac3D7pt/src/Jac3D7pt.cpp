@@ -25,6 +25,7 @@
 #include "dpc_common.hpp"
 #if FPGA || FPGA_EMULATOR
 #include <CL/sycl/INTEL/fpga_extensions.hpp>
+#include <CL/sycl/INTEL/ac_types/ac_int.hpp>
 #endif
 
 using namespace sycl;
@@ -80,18 +81,21 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 
 
 
-
-void stencil_read(queue &q, buffer<float, 1> &in_buf, int nx, int ny, int nz, int batch){
+template<int VFACTOR>
+void stencil_read(queue &q, buffer<float, 1> &in_buf, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
       event e1 = q.submit([&](handler &h) {
       accessor in(in_buf, h, read_only);
+
+      int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
+
       h.single_task<class producer>([=] () [[intel::kernel_args_restrict]]{
 
         [[intel::initiation_interval(1)]]
-        for(int i = 0; i < (nx*ny*nz*batch)/8; i++){
+        for(int i = 0; i < total_itr; i++){
           struct dPath vec;
-          #pragma unroll 8
-          for(int v = 0; v < 8; v++){
-            vec.data[v] = in[i*8+v];
+          #pragma unroll VFACTOR
+          for(int v = 0; v < VFACTOR; v++){
+            vec.data[v] = in[i*VFACTOR+v];
           }
           pipeS::PipeAt<0>::write(vec);
         }
@@ -101,17 +105,17 @@ void stencil_read(queue &q, buffer<float, 1> &in_buf, int nx, int ny, int nz, in
 }
 
 template <size_t idx>  struct struct_idX;
-template<int idx, int IdX>
-void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned short nz, unsigned short batch){
+template<int idx, int IdX, int DMAX, int VFACTOR> 
+void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
     event e2 = q.submit([&](handler &h) {
 
     std::string instance_name="compute"+std::to_string(idx);
     h.single_task<class struct_idX<IdX>>([=] () [[intel::kernel_args_restrict]]{
-    int total_itr = ((nx>>3)*ny*(batch*nz+1));
+    int total_itr = ((nx/VFACTOR)*ny*(batch*nz+1));
 
-    const int max_dpethl = 256/8;
-    const int max_dpethP = 256*256/8;
-    const int VFACTOR = 8;
+    const int max_dpethl = DMAX/VFACTOR;
+    const int max_dpethP = DMAX*DMAX/VFACTOR;
+
     struct dPath s_1_1_2, s_1_2_1, s_1_1_1, s_1_1_1_b, s_1_1_1_f, s_1_0_1, s_1_1_0;
     struct dPath window_1[max_dpethP], window_2[max_dpethl], window_3[max_dpethl], window_4[max_dpethP];
 
@@ -122,16 +126,16 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
     unsigned short j_l = 0, j_p = 0;
 
 
-    short id = 0, jd = 0, kd = 0, batd = 0;;
-    unsigned int mesh_size = (nx*ny)>>3;
-    unsigned short rEnd = (nx>>3)-1;
+    ac_int<12,true> id = 0, jd = 0, kd = 0, batd = 0;;
+    unsigned int mesh_size = (nx*ny)/VFACTOR;
+    ac_int<12,true> rEnd = (nx/VFACTOR)-1;
 
     [[intel::initiation_interval(1)]]
     for(int itr = 0; itr < total_itr; itr++){
-      unsigned short i = id; // itr % rEnd; //id;
-      unsigned short j = jd; //itr / rEnd ;///jd;
-      unsigned short k = kd;
-      unsigned short bat = batd;
+      ac_int<12,true> i = id; // itr % rEnd; //id;
+      ac_int<12,true> j = jd; //itr / rEnd ;///jd;
+      ac_int<12,true> k = kd;
+      ac_int<12,true> bat = batd;
 
       if(i == rEnd){
         id = 0;
@@ -167,19 +171,19 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
       s_1_2_1 = window_1[j_p];   // read
       window_2[j_l] = s_1_2_1;  //set
 
-      if(itr < (nx>>3)*ny*nz*batch){
+      if(itr < (nx/VFACTOR)*ny*nz*batch){
         s_1_1_2 = pipeS::PipeAt<idx>::read();
       }
 
       window_1[j_p] = s_1_1_2;
 
       j_l++;
-      if(j_l >= nx/8 -1){
+      if(j_l >= nx/VFACTOR -1){
         j_l = 0;
       }
 
       j_p++;
-      if(j_p >= (nx/8)*(ny-1)){
+      if(j_p >= (nx/VFACTOR)*(ny-1)){
         j_p = 0;
       }
 
@@ -193,7 +197,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
 
       // #pragma unroll 8
       process: for(short q = 0; q < VFACTOR; q++){
-        short index = (i << 3) + q;
+        short index = (i * VFACTOR) + q;
         float r1_1_2 =  s_1_1_2.data[q] * (0.02f);
         float r1_2_1 =  s_1_2_1.data[q] * (0.04f);
         float r0_1_1 =  mid_row[q] * (0.05f);
@@ -218,7 +222,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
       bool cond_wr = (k >= 1) && ( k < nz+1);
 
       // if(itr < (nx>>3)*ny*nz){
-      if(itr >= (nx>>3)*ny){
+      if(itr >= (nx/VFACTOR)*ny){
         pipeS::PipeAt<idx+1>::write(vec_wr);
       }
     }
@@ -227,19 +231,20 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
   });
 }
 
-template <int idx>
-void stencil_write(queue &q, buffer<float, 1> &out_buf, int nx, int ny, int nz, int batch, double &kernel_time){
+template <int idx, int VFACTOR>
+void stencil_write(queue &q, buffer<float, 1> &out_buf, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
+                  ac_int<12,true> batch, double &kernel_time){
     event e3 = q.submit([&](handler &h) {
     accessor out(out_buf, h, write_only);
     std::string instance_name="consumer"+std::to_string(idx);
     h.single_task<class instance_name>([=] () [[intel::kernel_args_restrict]]{
+      int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
       [[intel::initiation_interval(1)]]
-
-      for(int i = 0; i < (nx*ny*nz*batch)/8; i++){
+      for(int i = 0; i < total_itr; i++){
         struct dPath vec = pipeS::PipeAt<idx>::read();
-        #pragma unroll 8
-        for(int v = 0; v < 8; v++){
-          out[i*8+v] = vec.data[v];
+        #pragma unroll VFACTOR
+        for(int v = 0; v < VFACTOR; v++){
+          out[i*VFACTOR+v] = vec.data[v];
         }
       }
       
@@ -253,16 +258,18 @@ void stencil_write(queue &q, buffer<float, 1> &out_buf, int nx, int ny, int nz, 
 
 
 template <int N, int n> struct loop {
+  template< int DMAX, int VFACTOR>
   static void instantiate(queue &q, int nx, int ny, int nz, int batch){
-    loop<N-1, n-1>::instantiate(q, nx, ny, nz, batch);
-    stencil_compute<N-1, n-1>(q, nx, ny, nz, batch);
+    loop<N-1, n-1>::instantiate<DMAX, VFACTOR>(q, nx, ny, nz, batch);
+    stencil_compute<N-1, n-1, DMAX, VFACTOR>(q, nx, ny, nz, batch);
   }
 };
 
 template<> 
 struct loop<1, 1>{
+  template< int DMAX, int VFACTOR>
   static void instantiate(queue &q, int nx, int ny, int nz, int batch){
-    stencil_compute<0, 0>(q, nx, ny, nz, batch);
+    stencil_compute<0, 0, DMAX, VFACTOR>(q, nx, ny, nz, batch);
   }
 };
 
@@ -289,22 +296,23 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
   std::cout << "starting writing to the pipe\n" << std::endl;
   dpc_common::TimeInterval exe_time;
 
+
     for(int itr = 0; itr < n_iter; itr++){
 
       // reading from memory
-      stencil_read(q, in_buf, nx, ny, nz, batch);
-      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      stencil_read<8>(q, in_buf, nx, ny, nz, batch);
+      loop<UFACTOR, UFACTOR>::instantiate<256, 8>(q, nx, ny, nz, batch);
       //write back to memory
-      stencil_write<UFACTOR>(q, out_buf, nx, ny, nz, batch, kernel_time);
+      stencil_write<UFACTOR, 8>(q, out_buf, nx, ny, nz, batch, kernel_time);
       q.wait();
 
       
       // reading from memory
-      stencil_read(q, out_buf, nx, ny, nz, batch);
+      stencil_read<8>(q, out_buf, nx, ny, nz, batch);
       // computation
-      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      loop<UFACTOR, UFACTOR>::instantiate<256, 8>(q, nx, ny, nz, batch);
       //write back to memory
-      stencil_write<UFACTOR>(q, in_buf, nx, ny, nz, batch, kernel_time);
+      stencil_write<UFACTOR, 8>(q, in_buf, nx, ny, nz, batch, kernel_time);
       
 
       q.wait();
