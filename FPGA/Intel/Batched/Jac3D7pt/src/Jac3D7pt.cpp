@@ -122,7 +122,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
     unsigned short j_l = 0, j_p = 0;
 
 
-    short id = 0, jd = 0, kd = 0;
+    short id = 0, jd = 0, kd = 0, batd = 0;;
     unsigned int mesh_size = (nx*ny)>>3;
     unsigned short rEnd = (nx>>3)-1;
 
@@ -131,6 +131,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
       unsigned short i = id; // itr % rEnd; //id;
       unsigned short j = jd; //itr / rEnd ;///jd;
       unsigned short k = kd;
+      unsigned short bat = batd;
 
       if(i == rEnd){
         id = 0;
@@ -144,7 +145,10 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
         jd++;
       }
 
-      if(i == rEnd && j == ny-1){
+
+      if(i == rEnd && j == ny-1 && k == nz){
+        kd = 1;
+      }else if(i == rEnd && j == ny-1){
         kd++;
       }
 
@@ -163,7 +167,7 @@ void stencil_compute(queue &q, unsigned short nx, unsigned short ny, unsigned sh
       s_1_2_1 = window_1[j_p];   // read
       window_2[j_l] = s_1_2_1;  //set
 
-      if(itr < (nx>>3)*ny*nz){
+      if(itr < (nx>>3)*ny*nz*batch){
         s_1_1_2 = pipeS::PipeAt<idx>::read();
       }
 
@@ -328,12 +332,13 @@ void InitializeVector(IntVector &a) {
 int main(int argc, char* argv[]) {
 
   int n_iter = 1;
-  int nx = 8, ny = 8, nz=4, batch = 1;
+  int nx = 8, ny = 8, nz=4, batch = 4;
   // Change vector_size if it was passed as argument
   if (argc > 1) n_iter = std::stoi(argv[1]);
   if (argc > 2) nx = std::stoi(argv[2]);
   if (argc > 3) ny = std::stoi(argv[3]);
   if (argc > 4) nz = std::stoi(argv[4]);
+  if (argc > 5) batch = std::stoi(argv[5]);
 
   nx = (nx % 8 == 0 ? nx : (nx/8+1)*8);
   // Create device selector for the device of your interest.
@@ -384,35 +389,38 @@ int main(int argc, char* argv[]) {
   // Compute the sum of two vectors in sequential for validation.
 
   for(int itr= 0; itr < UFACTOR*n_iter; itr++){
-    for(int k = 0; k < nz; k++){
-      for(int j = 0; j < ny; j++){
-        for(int i = 0; i < nx; i++){
-          int ind = k*nx*ny + j*nx + i;
-
-          if(i > 0 && i < nx -1 && j > 0 && j < ny -1 && k > 0 && k < nz-1){
-            out_sequential.at(ind) =  in_vec_h.at(ind-nx*ny)*(0.01f) + in_vec_h.at(ind+nx*ny)*0.02f + in_vec_h.at(ind-nx)*(0.03f) + \
-                                      in_vec_h.at(ind+nx)*(0.04f) + in_vec_h.at(ind-1)*(0.05f) + in_vec_h.at(ind+1)*(0.06f) \
-                                       + in_vec_h.at(ind)*(0.79f);
-          } else {
-            out_sequential.at(ind) = in_vec_h.at(ind);
+    for(int bat = 0; bat < batch; bat++){
+      for(int k = 0; k < nz; k++){
+        for(int j = 0; j < ny; j++){
+          for(int i = 0; i < nx; i++){
+            int ind = k*nx*ny + j*nx + i;
+            int offset = bat*nx*ny*nz;
+            if(i > 0 && i < nx -1 && j > 0 && j < ny -1 && k > 0 && k < nz-1){
+              out_sequential.at(offset+ind) =   in_vec_h.at(offset+ind-nx*ny)*(0.01f) + in_vec_h.at(offset+ind+nx*ny)*0.02f + in_vec_h.at(offset+ind-nx)*(0.03f) + \
+                                                in_vec_h.at(offset+ind+nx)*(0.04f) + in_vec_h.at(offset+ind-1)*(0.05f) + in_vec_h.at(offset+ind+1)*(0.06f) \
+                                                + in_vec_h.at(offset+ind)*(0.79f);
+            } else {
+              out_sequential.at(offset+ind) = in_vec_h.at(offset+ind);
+            }
           }
         }
       }
     }
 
+    for(int bat = 0; bat < batch; bat++){
+      for(int k = 0; k < nz; k++){
+        for(int j = 0; j < ny; j++){
+          for(int i = 0; i < nx; i++){
+            int ind = k*nx*ny + j*nx + i;
+            int offset = bat*nx*ny*nz;
+            if(i > 0 && i < nx -1 && j > 0 && j < ny -1 && k > 0 && k < nz-1){
+              in_vec_h.at(offset+ind) =  out_sequential.at(offset+ind-nx*ny)*(0.01f) + out_sequential.at(offset+ind+nx*ny)*0.02f + out_sequential.at(offset+ind-nx)*(0.03f) + \
+                                         out_sequential.at(offset+ind+nx)*(0.04f) + out_sequential.at(offset+ind-1)*(0.05f) + out_sequential.at(offset+ind+1)*(0.06f) \
+                                         + out_sequential.at(offset+ind)*(0.79f);
 
-    for(int k = 0; k < nz; k++){
-      for(int j = 0; j < ny; j++){
-        for(int i = 0; i < nx; i++){
-          int ind = k*nx*ny + j*nx + i;
-           
-          if(i > 0 && i < nx -1 && j > 0 && j < ny -1 && k > 0 && k < nz-1){
-            in_vec_h.at(ind) =  out_sequential.at(ind-nx*ny)*(0.01f) + out_sequential.at(ind+nx*ny)*0.02f + out_sequential.at(ind-nx)*(0.03f) + \
-                                out_sequential.at(ind+nx)*(0.04f) + out_sequential.at(ind-1)*(0.05f) + out_sequential.at(ind+1)*(0.06f) \
-                                 + out_sequential.at(ind)*(0.79f);
-
-          } else {
-            in_vec_h.at(ind) = out_sequential.at(ind);
+            } else {
+              in_vec_h.at(offset+ind) = out_sequential.at(offset+ind);
+            }
           }
         }
       }
@@ -427,26 +435,22 @@ int main(int argc, char* argv[]) {
   //   out_sequential.at(i) = in_vec.at(i) + 50;
 
   // Verify that the two vectors are equal. 
-  for(int k = 0; k < nz; k++){ 
-    for(int j = 0; j < ny; j++){
-      for(int i = 0; i < nx; i++){
-        int ind = k*nx*ny + j*nx + i;
-        float chk = fabs((in_vec_h.at(ind) - in_vec.at(ind))/(in_vec_h.at(ind)));
-        if(chk > 0.00001 && fabs(in_vec_h.at(ind)) > 0.00001){
-          std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind) << " " << in_vec.at(ind) <<  std::endl;
-          // return -1;
+  for(int bat = 0; bat < batch; bat++){
+    for(int k = 0; k < nz; k++){ 
+      for(int j = 0; j < ny; j++){
+        for(int i = 0; i < nx; i++){
+          int ind = bat*nx*ny*nz + k*nx*ny + j*nx + i;
+          float chk = fabs((in_vec_h.at(ind) - in_vec.at(ind))/(in_vec_h.at(ind)));
+          if(chk > 0.00001 && fabs(in_vec_h.at(ind)) > 0.00001){
+            std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind) << " " << in_vec.at(ind) <<  std::endl;
+            return -1;
+          }
         }
-        // std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind) << " " << in_vec.at(ind) <<  std::endl;
       }
     }
   }
 
-  // for (size_t i = 0; i < out_sequential.size(); i++) {
-  //   if (in_vec_h.at(i) != in_vec.at(i)) {
-  //     std::cout << "Vector add failed on device.\n";
-  //     return -1;
-  //   }
-  // }
+
 
   int indices[]{0, 1, 2, (static_cast<int>(in_vec.size()) - 1)};
   constexpr size_t indices_size = sizeof(indices) / sizeof(int);
