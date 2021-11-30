@@ -42,7 +42,7 @@ struct dPath {
 using rd_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
 using wr_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
 
-#define UFACTOR 22
+#define UFACTOR 2
 
 struct pipeS{
   pipeS() = delete;
@@ -287,8 +287,8 @@ struct loop<1, 1>{
 //************************************
 void stencil_comp(queue &q, float* input, float* output, int n_iter, int nx, int ny, int nz, int batch) {
   // Create the range object for the vectors managed by the buffer.
-  range<1> num_items{input.size()};
-  int vec_size = input.size();
+  
+  int vec_size = nx*ny*nz*batch;
 
   // Create buffers that hold the data shared between the host and the devices.
   // The buffer destructor is responsible to copy the data back to host when it
@@ -381,15 +381,16 @@ int main(int argc, char* argv[]) {
     float* out_parallel = malloc_shared<float>(nx*ny*nz*batch, q);
     float* in_vec_h = malloc_shared<float>(nx*ny*nz*batch, q);
     float* out_sequential = malloc_shared<float>(nx*ny*nz*batch, q);
-    InitializeVector(in_vec);
-    InitializeVector(in_vec_h);
+
+    InitializeVector(in_vec, nx*ny*nz*batch);
+    InitializeVector(in_vec_h,nx*ny*nz*batch);
     // queue q2(d_selector,  dpc_common::exception_handler);
 
 
     // Print out the device information used for the kernel code.
     std::cout << "Running on device: "
               << q.get_device().get_info<info::device::name>() << "\n";
-    std::cout << "Vector size: " << in_vec.size() << "\n";
+    std::cout << "Vector size: " << nx*ny*nz*batch << "\n";
 
     // Vector addition in DPC++
     
@@ -435,6 +436,8 @@ int main(int argc, char* argv[]) {
         }
       }
 
+    }
+
 
 
       // Verify that the two vectors are equal. 
@@ -444,7 +447,7 @@ int main(int argc, char* argv[]) {
             for(int i = 0; i < nx; i++){
               int ind = bat*nx*ny*nz + k*nx*ny + j*nx + i;
               float chk = fabs((in_vec_h[ind] - in_vec[ind])/(in_vec_h[ind]));
-              if(chk > 0.00001 && fabs(in_vec_h.at(ind)) > 0.00001){
+              if(chk > 0.00001 && fabs(in_vec_h[ind]) > 0.00001){
                 std::cout << "j,i: " << j  << " " << i << " " << in_vec_h[ind] << " " << in_vec[ind] <<  std::endl;
                 return -1;
               }
@@ -457,8 +460,6 @@ int main(int argc, char* argv[]) {
       free(out_parallel, q);
       free(in_vec_h, q);
       free(out_sequential, q);
-
-  }
 
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
