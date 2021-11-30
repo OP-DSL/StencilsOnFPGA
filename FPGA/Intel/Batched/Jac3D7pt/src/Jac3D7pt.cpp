@@ -42,7 +42,7 @@ struct dPath {
 using rd_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
 using wr_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
 
-#define UFACTOR 1
+#define UFACTOR 22
 
 struct pipeS{
   pipeS() = delete;
@@ -50,7 +50,7 @@ struct pipeS{
 
   template <size_t idx>
   struct Pipes{
-    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8000000>;
+    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8>;
   };
 
   template <size_t idx>
@@ -117,13 +117,17 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
     const int max_dpethP = DMAX*DMAX/VFACTOR;
 
     struct dPath s_1_1_2, s_1_2_1, s_1_1_1, s_1_1_1_b, s_1_1_1_f, s_1_0_1, s_1_1_0;
-    struct dPath window_1[max_dpethP], window_2[max_dpethl], window_3[max_dpethl], window_4[max_dpethP];
+
+    [[intel::fpga_memory("BLOCK_RAM")]] struct dPath window_1[max_dpethP];
+    struct dPath window_2[max_dpethl];
+    struct dPath window_3[max_dpethl];
+    [[intel::fpga_memory("BLOCK_RAM")]] struct dPath window_4[max_dpethP];
 
 
 
     struct dPath vec_wr;
     [[intel::fpga_register]] float mid_row[VFACTOR+2];
-    unsigned short j_l = 0, j_p = 0;
+    ac_int<12,true>  j_ld = 0, j_pd = 0;
 
 
     ac_int<12,true> id = 0, jd = 0, kd = 0, batd = 0;;
@@ -136,6 +140,9 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
       ac_int<12,true> j = jd; //itr / rEnd ;///jd;
       ac_int<12,true> k = kd;
       ac_int<12,true> bat = batd;
+
+      ac_int<12,true> j_l = j_ld;
+      ac_int<12,true> j_p = j_pd;
 
       if(i == rEnd){
         id = 0;
@@ -177,17 +184,20 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
 
       window_1[j_p] = s_1_1_2;
 
-      j_l++;
-      if(j_l >= nx/VFACTOR -1){
-        j_l = 0;
+    
+      if(j_l >= nx/VFACTOR -2){
+        j_ld = 0;
+      } else {
+        j_ld++;
       }
 
-      j_p++;
-      if(j_p >= (nx/VFACTOR)*(ny-1)){
-        j_p = 0;
+      if(j_p >= (nx/VFACTOR)*(ny-1) - 1){
+        j_pd = 0;
+      } else {
+        j_pd++;
       }
 
-      #pragma unroll 8
+      #pragma unroll VFACTOR
       for(int v = 0; v < VFACTOR; v++){
         mid_row[v+1] = s_1_1_1.data[v]; 
       }
@@ -195,8 +205,8 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
       mid_row[0] = s_1_1_1_b.data[VFACTOR-1];
       mid_row[VFACTOR+1] = s_1_1_1_f.data[0];
 
-      // #pragma unroll 8
-      process: for(short q = 0; q < VFACTOR; q++){
+      #pragma unroll VFACTOR
+      for(short q = 0; q < VFACTOR; q++){
         short index = (i * VFACTOR) + q;
         float r1_1_2 =  s_1_1_2.data[q] * (0.02f);
         float r1_2_1 =  s_1_2_1.data[q] * (0.04f);
@@ -258,18 +268,16 @@ void stencil_write(queue &q, buffer<float, 1> &out_buf, ac_int<12,true> nx, ac_i
 
 
 template <int N, int n> struct loop {
-  template< int DMAX, int VFACTOR>
   static void instantiate(queue &q, int nx, int ny, int nz, int batch){
-    loop<N-1, n-1>::instantiate<DMAX, VFACTOR>(q, nx, ny, nz, batch);
-    stencil_compute<N-1, n-1, DMAX, VFACTOR>(q, nx, ny, nz, batch);
+    loop<N-1, n-1>::instantiate(q, nx, ny, nz, batch);
+    stencil_compute<N-1, n-1, 128, 8>(q, nx, ny, nz, batch);
   }
 };
 
 template<> 
 struct loop<1, 1>{
-  template< int DMAX, int VFACTOR>
   static void instantiate(queue &q, int nx, int ny, int nz, int batch){
-    stencil_compute<0, 0, DMAX, VFACTOR>(q, nx, ny, nz, batch);
+    stencil_compute<0, 0, 128, 8>(q, nx, ny, nz, batch);
   }
 };
 
@@ -301,7 +309,7 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
 
       // reading from memory
       stencil_read<8>(q, in_buf, nx, ny, nz, batch);
-      loop<UFACTOR, UFACTOR>::instantiate<256, 8>(q, nx, ny, nz, batch);
+      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
       //write back to memory
       stencil_write<UFACTOR, 8>(q, out_buf, nx, ny, nz, batch, kernel_time);
       q.wait();
@@ -310,7 +318,7 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
       // reading from memory
       stencil_read<8>(q, out_buf, nx, ny, nz, batch);
       // computation
-      loop<UFACTOR, UFACTOR>::instantiate<256, 8>(q, nx, ny, nz, batch);
+      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
       //write back to memory
       stencil_write<UFACTOR, 8>(q, in_buf, nx, ny, nz, batch, kernel_time);
       
