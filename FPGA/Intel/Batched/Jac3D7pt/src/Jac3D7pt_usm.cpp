@@ -39,8 +39,12 @@ struct dPath {
   [[intel::fpga_register]] float data[8];
 };
 
-using rd_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
-using wr_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
+struct dPath16 {
+  [[intel::fpga_register]] float data[16];
+};
+
+using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8>;
+using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8>;
 
 #define UFACTOR 2
 
@@ -85,17 +89,47 @@ template<int VFACTOR>
 void stencil_read(queue &q, const float* in, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
       event e1 = q.submit([&](handler &h) {
 
-      int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
+      int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR*2);
+      const int VFACTOR2 = VFACTOR*2;
       h.single_task<class producer>([=] () [[intel::kernel_args_restrict]]{
 
         [[intel::initiation_interval(1)]]
         for(int i = 0; i < total_itr; i++){
-          struct dPath vec;
+          struct dPath16 vec;
+          #pragma unroll VFACTOR2
+          for(int v = 0; v < VFACTOR2; v++){
+            vec.data[v] = in[i*VFACTOR2+v];
+          }
+          rd_pipe::write(vec);
+        }
+        
+      });
+    });
+}
+
+template<int VFACTOR>
+void PipeConvert_512_256(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
+      event e1 = q.submit([&](handler &h) {
+
+      int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR);
+      h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
+        struct dPath16 data16;
+        [[intel::initiation_interval(1)]]
+        for(int i = 0; i < total_itr; i++){
+          struct dPath data;
+          if((i&1) == 0){
+            data16 = rd_pipe::read();
+          }
+
           #pragma unroll VFACTOR
           for(int v = 0; v < VFACTOR; v++){
-            vec.data[v] = in[i*VFACTOR+v];
+            if((i&1) == 0){
+              data.data[v] = data16.data[v];
+            } else {
+              data.data[v] = data16.data[v+VFACTOR];
+            }
           }
-          pipeS::PipeAt<0>::write(vec);
+          pipeS::PipeAt<0>::write(data);
         }
         
       });
@@ -239,20 +273,54 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
   });
 }
 
+
+
 template <int idx, int VFACTOR>
+void PipeConvert_256_512(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
+                  ac_int<12,true> batch){
+    event e3 = q.submit([&](handler &h) {
+    // accessor out(out_buf, h, write_only);
+    h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
+      int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR);
+      struct dPath16 data16;
+      [[intel::initiation_interval(1)]]
+      for(int i = 0; i < total_itr; i++){
+        struct dPath data;
+        data = pipeS::PipeAt<idx>::read();
+        #pragma unroll VFACTOR
+        for(int v = 0; v < VFACTOR; v++){
+          if((i & 1) == 0){
+            data16.data[v] = data.data[v];
+          } else {
+            data16.data[v+VFACTOR] = data.data[v];
+          }
+        }
+        if((i & 1) == 1){
+          wr_pipe::write(data16);
+        }
+      }
+
+      
+      
+    });
+    });
+}
+
+
+template <int VFACTOR>
 void stencil_write(queue &q, float* out, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
                   ac_int<12,true> batch, double &kernel_time){
     event e3 = q.submit([&](handler &h) {
     // accessor out(out_buf, h, write_only);
-    std::string instance_name="consumer"+std::to_string(idx);
-    h.single_task<class instance_name>([=] () [[intel::kernel_args_restrict]]{
-      int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
+    h.single_task<class stencil_write>([=] () [[intel::kernel_args_restrict]]{
+      int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR*2);
+      const int VFACTOR2 = VFACTOR*2;
       [[intel::initiation_interval(1)]]
       for(int i = 0; i < total_itr; i++){
-        struct dPath vec = pipeS::PipeAt<idx>::read();
-        #pragma unroll VFACTOR
-        for(int v = 0; v < VFACTOR; v++){
-          out[i*VFACTOR+v] = vec.data[v];
+        struct dPath16 vec = wr_pipe::read();
+        #pragma unroll VFACTOR2
+        for(int v = 0; v < VFACTOR2; v++){
+          out[i*VFACTOR2+v] = vec.data[v];
         }
       }
       
@@ -307,18 +375,21 @@ void stencil_comp(queue &q, float* input, float* output, int n_iter, int nx, int
 
       // reading from memory
       stencil_read<8>(q, input, nx, ny, nz, batch);
+      PipeConvert_512_256<8>(q,nx, ny, nz, batch);
       loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      PipeConvert_256_512<UFACTOR, 8>(q,nx, ny, nz, batch);
       //write back to memory
-      stencil_write<UFACTOR, 8>(q, output, nx, ny, nz, batch, kernel_time);
+      stencil_write<8>(q, output, nx, ny, nz, batch, kernel_time);
       q.wait();
 
       
       // reading from memory
       stencil_read<8>(q, output, nx, ny, nz, batch);
-      // computation
+      PipeConvert_512_256<8>(q,nx, ny, nz, batch);
       loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      PipeConvert_256_512<UFACTOR, 8>(q,nx, ny, nz, batch);
       //write back to memory
-      stencil_write<UFACTOR, 8>(q, input, nx, ny, nz, batch, kernel_time);
+      stencil_write<8>(q, input, nx, ny, nz, batch, kernel_time);
       
 
       q.wait();
@@ -346,7 +417,7 @@ void InitializeVector(float *a, int size) {
 int main(int argc, char* argv[]) {
 
   int n_iter = 1;
-  int nx = 8, ny = 8, nz=4, batch = 4;
+  int nx = 32, ny = 32, nz=4, batch = 4;
   // Change vector_size if it was passed as argument
   if (argc > 1) n_iter = std::stoi(argv[1]);
   if (argc > 2) nx = std::stoi(argv[2]);
@@ -448,7 +519,7 @@ int main(int argc, char* argv[]) {
               int ind = bat*nx*ny*nz + k*nx*ny + j*nx + i;
               float chk = fabs((in_vec_h[ind] - in_vec[ind])/(in_vec_h[ind]));
               if(chk > 0.00001 && fabs(in_vec_h[ind]) > 0.00001){
-                std::cout << "j,i: " << j  << " " << i << " " << in_vec_h[ind] << " " << in_vec[ind] <<  std::endl;
+                std::cout << "j,i, k, index: " << j  << " " << i << " " << k << " " << ind << " " << in_vec_h[ind] << " " << in_vec[ind] <<  std::endl;
                 return -1;
               }
             }
