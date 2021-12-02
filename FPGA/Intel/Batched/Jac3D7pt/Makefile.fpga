@@ -34,7 +34,7 @@ vector-add-usm.fpga: a_usm.o
 run_emu: Jac3D7pt.fpga_emu
 	./Jac3D7pt.fpga_emu 1 32 32 32
 run_emu_usm: vector-add-usm.fpga_emu_usm
-	./vector-add-usm.fpga_emu_usm 1 32 32 32
+	./vector-add-usm.fpga_emu_usm 1 16 16 4 1
 
 
 run_hw: Jac3D7pt.fpga
