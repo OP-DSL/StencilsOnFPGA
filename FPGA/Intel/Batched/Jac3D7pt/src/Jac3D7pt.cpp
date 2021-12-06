@@ -30,19 +30,30 @@
 
 using namespace sycl;
 
-// Vector type and data size for this example.
-size_t vector_size = 10000;
-typedef std::vector<float> IntVector; 
+
 const int unroll_factor = 2;
+const int v_factor = 16;
 
 struct dPath {
   [[intel::fpga_register]] float data[8];
 };
 
-using rd_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
-using wr_pipe = INTEL::pipe<class pVec8, dPath, 8000000>;
+struct dPath16 {
+  [[intel::fpga_register]] float data[16];
+};
 
-#define UFACTOR 22
+// Vector type and data size for this example.
+size_t vector_size = 10000;
+typedef std::vector<struct dPath16> IntVector; 
+typedef std::vector<float> IntVectorS; 
+
+using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8>;
+using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8>;
+
+
+using OptLSU = ext::intel::lsu<ext::intel::burst_coalesce<true>>;
+
+#define UFACTOR 60
 
 struct pipeS{
   pipeS() = delete;
@@ -82,7 +93,7 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 
 
 template<int VFACTOR>
-void stencil_read(queue &q, buffer<float, 1> &in_buf, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
+void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
       event e1 = q.submit([&](handler &h) {
       accessor in(in_buf, h, read_only);
 
@@ -92,16 +103,42 @@ void stencil_read(queue &q, buffer<float, 1> &in_buf, ac_int<12,true> nx, ac_int
 
         [[intel::initiation_interval(1)]]
         for(int i = 0; i < total_itr; i++){
-          struct dPath vec;
-          #pragma unroll VFACTOR
-          for(int v = 0; v < VFACTOR; v++){
-            vec.data[v] = in[i*VFACTOR+v];
-          }
-          pipeS::PipeAt<0>::write(vec);
+          struct dPath16 vec = in[i];
+          rd_pipe::write(vec);
         }
         
       });
       });
+}
+
+
+template<int VFACTOR>
+void PipeConvert_512_256(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch){
+      event e1 = q.submit([&](handler &h) {
+
+      int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR);
+      h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
+        struct dPath16 data16;
+        [[intel::initiation_interval(1)]]
+        for(int i = 0; i < total_itr; i++){
+          struct dPath data;
+          if((i&1) == 0){
+            data16 = rd_pipe::read();
+          }
+
+          #pragma unroll VFACTOR
+          for(int v = 0; v < VFACTOR; v++){
+            if((i&1) == 0){
+              data.data[v] = data16.data[v];
+            } else {
+              data.data[v] = data16.data[v+VFACTOR];
+            }
+          }
+          pipeS::PipeAt<0>::write(data);
+        }
+        
+      });
+    });
 }
 
 template <size_t idx>  struct struct_idX;
@@ -241,21 +278,50 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
   });
 }
 
+
 template <int idx, int VFACTOR>
-void stencil_write(queue &q, buffer<float, 1> &out_buf, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
+void PipeConvert_256_512(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
+                  ac_int<12,true> batch){
+    event e3 = q.submit([&](handler &h) {
+    // accessor out(out_buf, h, write_only);
+    h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
+      int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR);
+      struct dPath16 data16;
+      [[intel::initiation_interval(1)]]
+      for(int i = 0; i < total_itr; i++){
+        struct dPath data;
+        data = pipeS::PipeAt<idx>::read();
+        #pragma unroll VFACTOR
+        for(int v = 0; v < VFACTOR; v++){
+          if((i & 1) == 0){
+            data16.data[v] = data.data[v];
+          } else {
+            data16.data[v+VFACTOR] = data.data[v];
+          }
+        }
+        if((i & 1) == 1){
+          wr_pipe::write(data16);
+        }
+      }
+
+      
+      
+    });
+    });
+}
+
+template <int VFACTOR>
+void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
                   ac_int<12,true> batch, double &kernel_time){
     event e3 = q.submit([&](handler &h) {
     accessor out(out_buf, h, write_only);
-    std::string instance_name="consumer"+std::to_string(idx);
+    std::string instance_name="consumer";
     h.single_task<class instance_name>([=] () [[intel::kernel_args_restrict]]{
       int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
       [[intel::initiation_interval(1)]]
       for(int i = 0; i < total_itr; i++){
-        struct dPath vec = pipeS::PipeAt<idx>::read();
-        #pragma unroll VFACTOR
-        for(int v = 0; v < VFACTOR; v++){
-          out[i*VFACTOR+v] = vec.data[v];
-        }
+        struct dPath16 vec = wr_pipe::read();
+        out[i] = vec;
       }
       
     });
@@ -287,7 +353,7 @@ struct loop<1, 1>{
 //************************************
 // Vector add in DPC++ on device: returns sum in 4th parameter "sum_parallel".
 //************************************
-void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int nx, int ny, int nz, int batch) {
+void stencil_comp(queue &q, IntVector  &input, IntVector &output, int n_iter, int nx, int ny, int nz, int batch) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{input.size()};
   int vec_size = input.size();
@@ -308,29 +374,51 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
     for(int itr = 0; itr < n_iter; itr++){
 
       // reading from memory
-      stencil_read<8>(q, in_buf, nx, ny, nz, batch);
+      stencil_read<16>(q, in_buf, nx, ny, nz, batch);
+      PipeConvert_512_256<8>(q,nx, ny, nz, batch);
       loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      PipeConvert_256_512<UFACTOR, 8>(q,nx, ny, nz, batch);
       //write back to memory
-      stencil_write<UFACTOR, 8>(q, out_buf, nx, ny, nz, batch, kernel_time);
+      stencil_write<16>(q, out_buf, nx, ny, nz, batch, kernel_time);
       q.wait();
 
       
       // reading from memory
-      stencil_read<8>(q, out_buf, nx, ny, nz, batch);
-      // computation
+      stencil_read<16>(q, out_buf, nx, ny, nz, batch);
+      PipeConvert_512_256<8>(q,nx, ny, nz, batch);
       loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      PipeConvert_256_512<UFACTOR, 8>(q,nx, ny, nz, batch);
       //write back to memory
-      stencil_write<UFACTOR, 8>(q, in_buf, nx, ny, nz, batch, kernel_time);
+      stencil_write<16>(q, in_buf, nx, ny, nz, batch, kernel_time);
       
 
       q.wait();
+
+
+      //       // reading from memory
+      // stencil_read<8>(q, in_buf, nx, ny, nz, batch);
+      // loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      // //write back to memory
+      // stencil_write<UFACTOR, 8>(q, out_buf, nx, ny, nz, batch, kernel_time);
+      // q.wait();
+
+      
+      // // reading from memory
+      // stencil_read<8>(q, out_buf, nx, ny, nz, batch);
+      // // computation
+      // loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
+      // //write back to memory
+      // stencil_write<UFACTOR, 8>(q, in_buf, nx, ny, nz, batch, kernel_time);
+      
+
+      // q.wait();
 
     }
 
     std::cout << "fimished reading from the pipe\n" << std::endl;
 
     double exe_elapsed = exe_time.Elapsed();
-    double bandwidth = 2.0*vec_size*sizeof(int)*n_iter*2.0/(kernel_time*1000000000);
+    double bandwidth = 2.0*v_factor*vec_size*sizeof(int)*n_iter*2.0/(kernel_time*1000000000);
     std::cout << "Elapsed time: " << kernel_time << std::endl;
     std::cout << "Bandwidth(GB/s): " << bandwidth << std::endl;
 }
@@ -338,8 +426,19 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
 //************************************
 // Initialize the vector from 0 to vector_size - 1
 //************************************
+template<int VFACTOR>
 void InitializeVector(IntVector &a) {
-  for (size_t i = 0; i < a.size(); i++) a.at(i) = i;
+  for (size_t i = 0; i < a.size(); i++){
+    for(int v = 0; v < VFACTOR; v++){
+        a[i].data[v] = i* VFACTOR + v +0.5f;
+    }
+  }
+}
+
+void InitializeVectorS(IntVectorS &a) {
+  for (size_t i = 0; i < a.size(); i++){
+      a[i] = i+0.5f;
+  }
 }
 
 //************************************
@@ -370,15 +469,16 @@ int main(int argc, char* argv[]) {
 #endif
 
   // Create vector objects with "vector_size" to store the input and output data.
-  IntVector in_vec, in_vec_h, out_sequential, out_parallel;
-  in_vec.resize(nx*ny*nz*batch);
+  IntVector in_vec, out_parallel;
+  IntVectorS in_vec_h, out_sequential;
+  in_vec.resize(nx/v_factor*ny*nz*batch);
   in_vec_h.resize(nx*ny*nz*batch);
   out_sequential.resize(nx*ny*nz*batch);
-  out_parallel.resize(nx*ny*nz*batch);
+  out_parallel.resize(nx/v_factor*ny*nz*batch);
 
   // Initialize input vectors with values from 0 to vector_size - 1
-  InitializeVector(in_vec);
-  InitializeVector(in_vec_h);
+  InitializeVector<v_factor>(in_vec);
+  InitializeVectorS(in_vec_h);
 
   try {
     queue q(d_selector,  dpc_common::exception_handler, property::queue::enable_profiling{});
@@ -442,24 +542,27 @@ int main(int argc, char* argv[]) {
       }
     }
 
-
-
   }
-   std::cout << "No error until here\n";
 
-  // for (size_t i = 0; i < out_sequential.size(); i++)
-  //   out_sequential.at(i) = in_vec.at(i) + 50;
+  // }
+  //  std::cout << "No error until here\n";
+
+  // // for (size_t i = 0; i < out_sequential.size(); i++)
+  // //   out_sequential.at(i) = in_vec.at(i) + 50;
 
   // Verify that the two vectors are equal. 
   for(int bat = 0; bat < batch; bat++){
     for(int k = 0; k < nz; k++){ 
       for(int j = 0; j < ny; j++){
-        for(int i = 0; i < nx; i++){
-          int ind = bat*nx*ny*nz + k*nx*ny + j*nx + i;
-          float chk = fabs((in_vec_h.at(ind) - in_vec.at(ind))/(in_vec_h.at(ind)));
-          if(chk > 0.00001 && fabs(in_vec_h.at(ind)) > 0.00001){
-            std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind) << " " << in_vec.at(ind) <<  std::endl;
-            return -1;
+        for(int i = 0; i < nx/v_factor; i++){
+          for(int v = 0; v < v_factor; v++){
+            int ind = bat*nx*ny*nz + k*nx*ny + j*nx + i*v_factor;
+            // std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind+v) << " " << in_vec.at(ind/v_factor).data[v] <<  std::endl;
+            float chk = fabs((in_vec_h.at(ind+v) - in_vec.at(ind/v_factor).data[v])/(in_vec_h.at(ind+v)));
+            if(chk > 0.00001 && fabs(in_vec_h.at(ind+v)) > 0.00001){
+              std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind+v) << " " << in_vec.at(v_factor/v).data[v] <<  std::endl;
+              return -1;
+            }
           }
         }
       }
@@ -468,16 +571,17 @@ int main(int argc, char* argv[]) {
 
 
 
-  int indices[]{0, 1, 2, (static_cast<int>(in_vec.size()) - 1)};
-  constexpr size_t indices_size = sizeof(indices) / sizeof(int);
 
-  // Print out the result of vector add.
-  for (int i = 0; i < indices_size; i++) {
-    int j = indices[i];
-    if (i == indices_size - 1) std::cout << "...\n";
-    std::cout << "[" << j << "]: " << in_vec[j] << " + 50 = "
-              << out_parallel[j] << "\n";
-  }
+  // int indices[]{0, 1, 2, (static_cast<int>(in_vec.size()) - 1)};
+  // constexpr size_t indices_size = sizeof(indices) / sizeof(int);
+
+  // // Print out the result of vector add.
+  // for (int i = 0; i < indices_size; i++) {
+  //   int j = indices[i];
+  //   if (i == indices_size - 1) std::cout << "...\n";
+  //   std::cout << "[" << j << "]: " << in_vec[j] << " + 50 = "
+  //             << out_parallel[j] << "\n";
+  // }
 
   in_vec.clear();
   out_sequential.clear();
