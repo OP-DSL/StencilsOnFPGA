@@ -28,6 +28,8 @@
 #include <CL/sycl/INTEL/ac_types/ac_int.hpp>
 #endif
 
+#include "populate_cpu.cpp"
+
 using namespace sycl;
 
 
@@ -37,6 +39,7 @@ const int v_factor = 16;
 struct dPath {
   [[intel::fpga_register]] float data[8];
 };
+
 
 struct dPath16 {
   [[intel::fpga_register]] float data[16];
@@ -50,10 +53,7 @@ typedef std::vector<float> IntVectorS;
 using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8>;
 using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8>;
 
-
-using OptLSU = ext::intel::lsu<ext::intel::burst_coalesce<true>>;
-
-#define UFACTOR 60
+#define UFACTOR 2
 
 struct pipeS{
   pipeS() = delete;
@@ -97,7 +97,7 @@ void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf, int total_itr){
       event e1 = q.submit([&](handler &h) {
       accessor in(in_buf, h, read_only);
 
-      // int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
+      // int total_itr = ((nx*ny)*(nz))/VFACTOR;
 
       h.single_task<class producer>([=] () [[intel::kernel_args_restrict]]{
 
@@ -116,7 +116,7 @@ template<int VFACTOR>
 void PipeConvert_512_256(queue &q, int total_itr){
       event e1 = q.submit([&](handler &h) {
 
-      // int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR);
+      // int total_itr = ((nx*ny)*(nz))/(VFACTOR);
       h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
         struct dPath16 data16;
         [[intel::initiation_interval(1)]]
@@ -142,44 +142,33 @@ void PipeConvert_512_256(queue &q, int total_itr){
 }
 
 template <size_t idx>  struct struct_idX;
-template<int idx, int IdX, int DMAX, int VFACTOR> 
-void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch, int total_itr){
+template<int idx, int IdX, int DMAX, int VFACTOR>
+void stencil_compute(queue &q, ac_int<14,true>  nx, ac_int<14,true>  ny, ac_int<14,true>  nz, int total_itr){
     event e2 = q.submit([&](handler &h) {
-
     std::string instance_name="compute"+std::to_string(idx);
     h.single_task<class struct_idX<IdX>>([=] () [[intel::kernel_args_restrict]]{
-    // int total_itr = ((nx/VFACTOR)*ny*(batch*nz+1));
+    
+    // int total_itr = ((nx/VFACTOR)*(ny*nz+1));
+    struct dPath s_1_2, s_2_1, s_1_1, s_0_1, s_1_0;
 
     const int max_dpethl = DMAX/VFACTOR;
-    const int max_dpethP = DMAX*DMAX/VFACTOR;
 
-    struct dPath s_1_1_2, s_1_2_1, s_1_1_1, s_1_1_1_b, s_1_1_1_f, s_1_0_1, s_1_1_0;
-
-    [[intel::fpga_memory("BLOCK_RAM")]] struct dPath window_1[max_dpethP];
-    struct dPath window_2[max_dpethl];
-    struct dPath window_3[max_dpethl];
-    [[intel::fpga_memory("BLOCK_RAM")]] struct dPath window_4[max_dpethP];
-
-
+    struct dPath wind1[max_dpethl];
+    struct dPath wind2[max_dpethl];
 
     struct dPath vec_wr;
-    [[intel::fpga_register]] float mid_row[VFACTOR+2];
-    ac_int<12,true>  j_ld = 0, j_pd = 0;
+    [[intel::fpga_register]] float mid_row[10];
+    ac_int<14,true>  i_ld = 0;
 
 
-    ac_int<12,true> id = 0, jd = 0, kd = 0, batd = 0;;
-    unsigned int mesh_size = (nx*ny)/VFACTOR;
-    ac_int<12,true> rEnd = (nx/VFACTOR)-1;
-
+    short id = 0, jd = 0, kd = 0;
+    unsigned short rEnd = (nx/VFACTOR)-1;
     [[intel::initiation_interval(1)]]
     for(int itr = 0; itr < total_itr; itr++){
-      ac_int<12,true> i = id; // itr % rEnd; //id;
-      ac_int<12,true> j = jd; //itr / rEnd ;///jd;
-      ac_int<12,true> k = kd;
-      ac_int<12,true> bat = batd;
-
-      ac_int<12,true> j_l = j_ld;
-      ac_int<12,true> j_p = j_pd;
+      ac_int<14,true>  i = id; 
+      ac_int<14,true>  j = jd; 
+      ac_int<14,true>  k = kd;
+      ac_int<14,true>  i_l = i_ld;
 
       if(i == rEnd){
         id = 0;
@@ -187,95 +176,52 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
         id++;
       }
 
-      if(i == rEnd && j == ny-1){
-        jd = 0;
+      if(i == rEnd && j == ny){
+        jd = 1;
       } else if(i == rEnd){
         jd++;
       }
 
-
-      if(i == rEnd && j == ny-1 && k == nz){
-        kd = (bat == batch-1)? 0 : 1;
-      }else if(i == rEnd && j == ny-1){
+      if(i == rEnd && j == ny){
         kd++;
       }
 
-      if(i == rEnd && j == ny-1 && k == nz && bat == batch-1){
-        batd = 0;
-      } else {
-        batd++;
+
+
+      s_1_0 = wind2[i_l];
+
+      s_0_1 = s_1_1;
+      wind2[i_l] = s_0_1;
+
+      s_1_1 = s_2_1;
+      s_2_1 = wind1[i_l];
+
+      if(itr < (nx/VFACTOR)*ny*nz){
+        s_1_2 = pipeS::PipeAt<idx>::read();
       }
 
+      wind1[i_l] = s_1_2;
 
-      s_1_1_0 = window_4[j_p];
-
-      s_1_0_1 = window_3[j_l];
-      window_4[j_p] = s_1_0_1;
-
-      s_1_1_1_b = s_1_1_1;
-      window_3[j_l] = s_1_1_1_b;
-
-      s_1_1_1 = s_1_1_1_f;
-      s_1_1_1_f = window_2[j_l];  // read
-
-      s_1_2_1 = window_1[j_p];   // read
-      window_2[j_l] = s_1_2_1;  //set
-
-      if(itr < (nx/VFACTOR)*ny*nz*batch){
-        s_1_1_2 = pipeS::PipeAt<idx>::read();
-      }
-
-      window_1[j_p] = s_1_1_2;
-
-    
-      if(j_l >= nx/VFACTOR -2){
-        j_ld = 0;
+      if(i_l >= nx/VFACTOR -2){
+        i_ld = 0;
       } else {
-        j_ld++;
-      }
-
-      if(j_p >= (nx/VFACTOR)*(ny-1) - 1){
-        j_pd = 0;
-      } else {
-        j_pd++;
+        i_ld++;
       }
 
       #pragma unroll VFACTOR
       for(int v = 0; v < VFACTOR; v++){
-        mid_row[v+1] = s_1_1_1.data[v]; 
+        mid_row[v+1] = s_1_1.data[v]; 
       }
-
-      mid_row[0] = s_1_1_1_b.data[VFACTOR-1];
-      mid_row[VFACTOR+1] = s_1_1_1_f.data[0];
+      mid_row[0] = s_0_1.data[VFACTOR-1];
+      mid_row[VFACTOR+1] = s_2_1.data[0];
 
       #pragma unroll VFACTOR
-      for(short q = 0; q < VFACTOR; q++){
-        short index = (i * VFACTOR) + q;
-        float r1_1_2 =  s_1_1_2.data[q] * (0.02f);
-        float r1_2_1 =  s_1_2_1.data[q] * (0.04f);
-        float r0_1_1 =  mid_row[q] * (0.05f);
-        float r1_1_1 =  mid_row[q+1] * (0.79f);
-        float r2_1_1 =  mid_row[q+2] * (0.06f);
-        float r1_0_1 =  s_1_0_1.data[q] * (0.03f);
-        float r1_1_0 =  s_1_1_0.data[q] * (0.01f);
-
-        float f1 = r1_1_2 + r1_2_1;
-        float f2 = r0_1_1 + r1_1_1;
-        float f3 = r2_1_1 + r1_0_1;
-
-
-        float r1 = f1 + f2;
-        float r2=  f3 + r1_1_0;
-
-        float result  = r1 + r2;
-        bool change_cond = (index <= 0 || index >= nx-1 || (k <= 1) || (k >= nz) || (j <= 0) || (j >= ny -1));
-        vec_wr.data[q] = change_cond ? mid_row[q+1] : result;
+      for(int v = 0; v < VFACTOR; v++){
+        int i_ind = i *VFACTOR + v;
+        float val =  (mid_row[v] + mid_row[v+2] + s_1_0.data[v] + s_1_2.data[v])/8 + (mid_row[v+1])/2;
+        vec_wr.data[v] = (i_ind > 0 && i_ind < nx-1 && j > 1 && j < ny ) ? val : mid_row[v+1];
       }
-
-      bool cond_wr = (k >= 1) && ( k < nz+1);
-
-      // if(itr < (nx>>3)*ny*nz){
-      if(itr >= (nx/VFACTOR)*ny){
+      if(itr >= (nx/VFACTOR)){
         pipeS::PipeAt<idx+1>::write(vec_wr);
       }
     }
@@ -284,13 +230,12 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
   });
 }
 
-
 template <int idx, int VFACTOR>
 void PipeConvert_256_512(queue &q, int total_itr){
     event e3 = q.submit([&](handler &h) {
     // accessor out(out_buf, h, write_only);
     h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
-      // int total_itr = ((nx*ny)*(nz*batch))/(VFACTOR);
+      // int total_itr = ((nx*ny)*(nz))/(VFACTOR);
       struct dPath16 data16;
       [[intel::initiation_interval(1)]]
       for(int i = 0; i < total_itr; i++){
@@ -316,12 +261,12 @@ void PipeConvert_256_512(queue &q, int total_itr){
 }
 
 template <int VFACTOR>
-void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf,int total_itr, double &kernel_time){
+void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf, int total_itr, double &kernel_time){
     event e3 = q.submit([&](handler &h) {
     accessor out(out_buf, h, write_only);
     std::string instance_name="consumer";
     h.single_task<class instance_name>([=] () [[intel::kernel_args_restrict]]{
-      // int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
+      // int total_itr = ((nx*ny)*(nz))/VFACTOR;
       [[intel::initiation_interval(1)]]
       for(int i = 0; i < total_itr; i++){
         struct dPath16 vec = wr_pipe::read();
@@ -338,16 +283,16 @@ void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf,int total_itr, d
 
 
 template <int N, int n> struct loop {
-  static void instantiate(queue &q, int nx, int ny, int nz, int batch){
-    loop<N-1, n-1>::instantiate(q, nx, ny, nz, batch);
-    stencil_compute<N-1, n-1, 128, 8>(q, nx, ny, nz, batch);
+  static void instantiate(queue &q, int nx, int ny, int nz, int total_itr){
+    loop<N-1, n-1>::instantiate(q, nx, ny, nz, total_itr);
+    stencil_compute<N-1, n-1, 4096, 8>(q, nx, ny, nz, total_itr);
   }
 };
 
 template<> 
 struct loop<1, 1>{
-  static void instantiate(queue &q, int nx, int ny, int nz, int batch){
-    stencil_compute<0, 0, 128, 8>(q, nx, ny, nz, batch);
+  static void instantiate(queue &q, int nx, int ny, int nz, int total_itr){
+    stencil_compute<0, 0, 4096, 8>(q, nx, ny, nz, total_itr);
   }
 };
 
@@ -357,7 +302,7 @@ struct loop<1, 1>{
 //************************************
 // Vector add in DPC++ on device: returns sum in 4th parameter "sum_parallel".
 //************************************
-void stencil_comp(queue &q, IntVector  &input, IntVector &output, int n_iter, int nx, int ny, int nz, int batch, int times) {
+void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int nx, int ny, int nz, int batch) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{input.size()};
   int vec_size = input.size();
@@ -375,50 +320,54 @@ void stencil_comp(queue &q, IntVector  &input, IntVector &output, int n_iter, in
   dpc_common::TimeInterval exe_time;
 
 
-    int total_itr = ((nx*ny)*(nz*batch))/16;
-    int total_itrS = ((nx/8)*ny*(batch*nz+1));
+  struct data_G data_g;
+  data_g.sizex = nx;
+  data_g.sizey = ny;
+  data_g.sizez = nz;
+  data_g.grid_sizex = nx+2*ORDER;
+  data_g.grid_sizey = ny+2*ORDER;
+  data_g.grid_sizez = nz+2*ORDER;
+  data_g.limit_z = nz+3*ORDER;
+
+
+  unsigned short grid_sizey_4 = (data_g.grid_sizey - 4);
+  data_g.plane_size = data_g.grid_sizex * data_g.grid_sizey;
+
+  data_g.plane_diff = data_g.grid_sizex * grid_sizey_4;
+  data_g.line_diff = data_g.grid_sizex - 4;
+  data_g.gridsize_pr = data_g.plane_size * (data_g.limit_z) * batch;
+
+  unsigned int total_itr_8 = (data_g.plane_size * (data_g.grid_sizez)* batch);
+  unsigned int total_itr_16 = total_itr_8 >> 1;
+
     for(int itr = 0; itr < n_iter; itr++){
 
-      // reading from memory
-      stencil_read<16>(q, in_buf, nx, ny, nz, batch);
-      PipeConvert_512_256<8>(q,nx, ny, nz, batch);
-      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch, total_itrS);
-      PipeConvert_256_512<UFACTOR, 8>(q,nx, ny, nz, batch);
+    // reading from memory
+      stencil_read<16>(q, in_buf, total_itr_16);
+      PipeConvert_512_256<8>(q, total_itr_8);
+
+      derives_calc_ytep_k1( q, data_g);
+      derives_calc_ytep_k2( q, data_g);
+      derives_calc_ytep_k3( q, data_g);
+      derives_calc_ytep_k4( q, data_g);
+
+      PipeConvert_256_512<UFACTOR, 8>(q, total_itr_8);
       //write back to memory
-      stencil_write<16>(q, out_buf, nx, ny, nz, batch, kernel_time);
+      stencil_write<16>(q, out_buf, total_itr_16, kernel_time);
       q.wait();
 
       
       // reading from memory
-      stencil_read<16>(q, out_buf, nx, ny, nz, batch);
-      PipeConvert_512_256<8>(q,nx, ny, nz, batch);
-      loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch, total_itrS);
-      PipeConvert_256_512<UFACTOR, 8>(q,nx, ny, nz, batch);
+      stencil_read<16>(q, out_buf, total_itr_16);
+      PipeConvert_512_256<8>(q, total_itr_8);
+      derives_calc_ytep_k1( q, data_g);
+      derives_calc_ytep_k2( q, data_g);
+      derives_calc_ytep_k3( q, data_g);
+      derives_calc_ytep_k4( q, data_g);
+      PipeConvert_256_512<UFACTOR, 8>(q, total_itr_8);
       //write back to memory
-      stencil_write<16>(q, in_buf, nx, ny, nz, batch, kernel_time);
-      
-
+      stencil_write<16>(q, in_buf, total_itr_16, kernel_time);
       q.wait();
-
-
-      //       // reading from memory
-      // stencil_read<8>(q, in_buf, nx, ny, nz, batch);
-      // loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
-      // //write back to memory
-      // stencil_write<UFACTOR, 8>(q, out_buf, nx, ny, nz, batch, kernel_time);
-      // q.wait();
-
-      
-      // // reading from memory
-      // stencil_read<8>(q, out_buf, nx, ny, nz, batch);
-      // // computation
-      // loop<UFACTOR, UFACTOR>::instantiate(q, nx, ny, nz, batch);
-      // //write back to memory
-      // stencil_write<UFACTOR, 8>(q, in_buf, nx, ny, nz, batch, kernel_time);
-      
-
-      // q.wait();
-
     }
 
     std::cout << "fimished reading from the pipe\n" << std::endl;
@@ -453,7 +402,7 @@ void InitializeVectorS(IntVectorS &a) {
 int main(int argc, char* argv[]) {
 
   int n_iter = 1;
-  int nx = 8, ny = 8, nz=4, batch = 4;
+  int nx = 128, ny = 128, nz=2, batch=1;
   // Change vector_size if it was passed as argument
   if (argc > 1) n_iter = std::stoi(argv[1]);
   if (argc > 2) nx = std::stoi(argv[2]);
@@ -462,6 +411,68 @@ int main(int argc, char* argv[]) {
   if (argc > 5) batch = std::stoi(argv[5]);
 
   nx = (nx % 8 == 0 ? nx : (nx/8+1)*8);
+
+  struct Grid_d grid_d;
+  grid_d.logical_size_x = nx;
+  grid_d.logical_size_y = ny;
+  grid_d.logical_size_z = nz;
+
+
+  grid_d.act_sizex = nx + ORDER*2;
+  grid_d.act_sizey = ny + ORDER*2;
+  grid_d.act_sizez = nz + ORDER*2;
+
+  grid_d.grid_size_x = grid_d.act_sizex;
+  grid_d.grid_size_y = grid_d.act_sizey;
+  grid_d.grid_size_z = grid_d.act_sizez;
+
+
+  grid_d.data_size_bytes_dim1 = 1*grid_d.grid_size_x * grid_d.grid_size_y * grid_d.grid_size_z* sizeof(float) * batch;
+  grid_d.data_size_bytes_dim6 = 6*grid_d.grid_size_x * grid_d.grid_size_y * grid_d.grid_size_z* sizeof(float) * batch;
+  grid_d.data_size_bytes_dim8 = 8*grid_d.grid_size_x * grid_d.grid_size_y * grid_d.grid_size_z* sizeof(float) * batch;
+  grid_d.dims = 8*grid_d.grid_size_x * grid_d.grid_size_y * grid_d.grid_size_z;
+
+
+  float * grid_yy_rho_mu              = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_yy_rho_mu_temp         = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k1                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k2                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k3                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k4                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+
+  // need to be vector, will change that later
+  // float * grid_yy_rho_mu_d     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  // float * grid_yy_rho_mu_temp_d  = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+
+  IntVector grid_yy_rho_mu_d, grid_yy_rho_mu_temp_d;
+  grid_yy_rho_mu_d.resize(grid_d.data_size_bytes_dim8/v_factor);
+  grid_yy_rho_mu_temp_d.resize(grid_d.data_size_bytes_dim8/v_factor);
+
+  for(int i = 0; i < batch; i++){
+    populate_rho_mu_yy(&grid_yy_rho_mu[grid_d.dims * i], grid_d);
+  }
+  copy_grid(grid_yy_rho_mu, grid_yy_rho_mu_d, grid_d.data_size_bytes_dim8);
+
+
+  float dt = 0.1;
+  for(int i = 0; i < batch; i++){
+    for(int itr = 0; itr < n_iter*6; itr++){
+       fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
+       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
+
+       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k2[grid_d.dims * i], grid_d);
+       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k2[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
+
+       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k3[grid_d.dims * i], grid_d);
+       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k3[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 1.0, grid_d);
+
+       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k4[grid_d.dims * i], grid_d);
+       final_update_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], &grid_k2[grid_d.dims * i], &grid_k3[grid_d.dims * i], &grid_k4[grid_d.dims * i], dt, grid_d);
+
+     }
+   }
+
+
   // Create device selector for the device of your interest.
 #if FPGA_EMULATOR
   // DPC++ extension: FPGA emulator selector on systems without FPGA card.
@@ -475,17 +486,16 @@ int main(int argc, char* argv[]) {
 #endif
 
   // Create vector objects with "vector_size" to store the input and output data.
-  IntVector in_vec, out_parallel;
-  IntVectorS in_vec_h, out_sequential;
-  in_vec.resize(nx/v_factor*ny*nz*batch);
-  in_vec_h.resize(nx*ny*nz*batch);
-  out_sequential.resize(nx*ny*nz*batch);
-  out_parallel.resize(nx/v_factor*ny*nz*batch);
+  // IntVector in_vec, out_parallel;
+  // IntVectorS in_vec_h, out_sequential;
+  // in_vec.resize(nx/v_factor*ny*nz);
+  // in_vec_h.resize(nx*ny*nz);
+  // out_sequential.resize(nx*ny*nz);
+  // out_parallel.resize(nx/v_factor*ny*nz);
 
   // Initialize input vectors with values from 0 to vector_size - 1
-  InitializeVector<v_factor>(in_vec);
-  InitializeVectorS(in_vec_h);
-
+  // InitializeVector<v_factor>(in_vec);
+  // InitializeVectorS(in_vec_h);
   try {
     queue q(d_selector,  dpc_common::exception_handler, property::queue::enable_profiling{});
 
@@ -499,7 +509,7 @@ int main(int argc, char* argv[]) {
 
     // Vector addition in DPC++
     
-    stencil_comp(q, in_vec, out_parallel, n_iter, nx, ny, nz, batch);
+    stencil_comp(q, grid_yy_rho_mu_d, grid_yy_rho_mu_temp_d, n_iter, nx, ny, nz);
 
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
@@ -510,65 +520,18 @@ int main(int argc, char* argv[]) {
 
   // Compute the sum of two vectors in sequential for validation.
 
-  for(int itr= 0; itr < UFACTOR*n_iter; itr++){
-    for(int bat = 0; bat < batch; bat++){
-      for(int k = 0; k < nz; k++){
-        for(int j = 0; j < ny; j++){
-          for(int i = 0; i < nx; i++){
-            int ind = k*nx*ny + j*nx + i;
-            int offset = bat*nx*ny*nz;
-            if(i > 0 && i < nx -1 && j > 0 && j < ny -1 && k > 0 && k < nz-1){
-              out_sequential.at(offset+ind) =   in_vec_h.at(offset+ind-nx*ny)*(0.01f) + in_vec_h.at(offset+ind+nx*ny)*0.02f + in_vec_h.at(offset+ind-nx)*(0.03f) + \
-                                                in_vec_h.at(offset+ind+nx)*(0.04f) + in_vec_h.at(offset+ind-1)*(0.05f) + in_vec_h.at(offset+ind+1)*(0.06f) \
-                                                + in_vec_h.at(offset+ind)*(0.79f);
-            } else {
-              out_sequential.at(offset+ind) = in_vec_h.at(offset+ind);
-            }
-          }
-        }
-      }
-    }
-
-    for(int bat = 0; bat < batch; bat++){
-      for(int k = 0; k < nz; k++){
-        for(int j = 0; j < ny; j++){
-          for(int i = 0; i < nx; i++){
-            int ind = k*nx*ny + j*nx + i;
-            int offset = bat*nx*ny*nz;
-            if(i > 0 && i < nx -1 && j > 0 && j < ny -1 && k > 0 && k < nz-1){
-              in_vec_h.at(offset+ind) =  out_sequential.at(offset+ind-nx*ny)*(0.01f) + out_sequential.at(offset+ind+nx*ny)*0.02f + out_sequential.at(offset+ind-nx)*(0.03f) + \
-                                         out_sequential.at(offset+ind+nx)*(0.04f) + out_sequential.at(offset+ind-1)*(0.05f) + out_sequential.at(offset+ind+1)*(0.06f) \
-                                         + out_sequential.at(offset+ind)*(0.79f);
-
-            } else {
-              in_vec_h.at(offset+ind) = out_sequential.at(offset+ind);
-            }
-          }
-        }
-      }
-    }
-
-  }
-
-  // }
-  //  std::cout << "No error until here\n";
-
-  // // for (size_t i = 0; i < out_sequential.size(); i++)
-  // //   out_sequential.at(i) = in_vec.at(i) + 50;
+   std::cout << "No error until here\n";
 
   // Verify that the two vectors are equal. 
-  for(int bat = 0; bat < batch; bat++){
-    for(int k = 0; k < nz; k++){ 
-      for(int j = 0; j < ny; j++){
-        for(int i = 0; i < nx/v_factor; i++){
-          for(int v = 0; v < v_factor; v++){
-            int ind = bat*nx*ny*nz + k*nx*ny + j*nx + i*v_factor;
-            // std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind+v) << " " << in_vec.at(ind/v_factor).data[v] <<  std::endl;
-            float chk = fabs((in_vec_h.at(ind+v) - in_vec.at(ind/v_factor).data[v])/(in_vec_h.at(ind+v)));
-            if(chk > 0.00001 && fabs(in_vec_h.at(ind+v)) > 0.00001){
-              std::cout << "j,i: " << j  << " " << i << " " << in_vec_h.at(ind+v) << " " << in_vec.at(v_factor/v).data[v] <<  std::endl;
-              return -1;
-            }
+  for(int k = 0; k < nz; k++){ 
+    for(int j = 0; j < ny; j++){
+      for(int i = 0; i < nx/v_factor; i++){
+        for(int v = 0; v < v_factor; v++){
+          int ind = k*nx*ny + j*nx + i*v_factor;
+          float chk = fabs((in_vec_h.at(ind+v) - in_vec.at(ind/v_factor).data[v])/(in_vec_h.at(ind+v)));
+          if(chk > 0.00001 && fabs(in_vec_h.at(ind+v)) > 0.00001){
+            std::cout << "j,i, k, ind: " << j  << " " << i << " " << k << " " << ind << " " << in_vec_h.at(ind+v) << " " << in_vec.at(ind/v_factor).data[v] <<  std::endl;
+            return -1;
           }
         }
       }
@@ -576,22 +539,23 @@ int main(int argc, char* argv[]) {
   }
 
 
+  float * grid_yy_rho_mu              = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_yy_rho_mu_temp         = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k1                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k2                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k3                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
+  float * grid_k4                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
 
+  free(grid_yy_rho_mu);
+  free(grid_yy_rho_mu_temp);
+  free(grid_k1);
+  free(grid_k2);
+  free(grid_k3);
+  free(grid_k4);
 
-  // int indices[]{0, 1, 2, (static_cast<int>(in_vec.size()) - 1)};
-  // constexpr size_t indices_size = sizeof(indices) / sizeof(int);
+  grid_yy_rho_mu_d.clear();
+  grid_yy_rho_mu_temp.clear();
 
-  // // Print out the result of vector add.
-  // for (int i = 0; i < indices_size; i++) {
-  //   int j = indices[i];
-  //   if (i == indices_size - 1) std::cout << "...\n";
-  //   std::cout << "[" << j << "]: " << in_vec[j] << " + 50 = "
-  //             << out_parallel[j] << "\n";
-  // }
-
-  in_vec.clear();
-  out_sequential.clear();
-  out_parallel.clear();
 
   std::cout << "Vector add successfully completed on device.\n";
   return 0;
