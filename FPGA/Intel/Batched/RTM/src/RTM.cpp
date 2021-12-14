@@ -28,9 +28,11 @@
 #include <CL/sycl/INTEL/ac_types/ac_int.hpp>
 #endif
 
-#include "populate_cpu.cpp"
-
+#include "rtm.h"
 using namespace sycl;
+
+
+
 
 
 const int unroll_factor = 2;
@@ -50,8 +52,8 @@ size_t vector_size = 10000;
 typedef std::vector<struct dPath16> IntVector; 
 typedef std::vector<float> IntVectorS; 
 
-using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8>;
-using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8>;
+using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8000000>;
+using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8000000>;
 
 #define UFACTOR 2
 
@@ -61,7 +63,7 @@ struct pipeS{
 
   template <size_t idx>
   struct Pipes{
-    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8>;
+    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8000000>;
   };
 
   template <size_t idx>
@@ -90,11 +92,16 @@ static auto exception_handler = [](sycl::exception_list e_list) {
   }
 };
 
-
+#include "populate_cpu.cpp"
+#include "derives_calc_ytep_k1.cpp"
+#include "derives_calc_ytep_k2.cpp"
+#include "derives_calc_ytep_k3.cpp"
+#include "derives_calc_ytep_k4.cpp"
 
 template<int VFACTOR>
 void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf, int total_itr){
       event e1 = q.submit([&](handler &h) {
+      // cl::sycl::stream out(1024, 256, h);
       accessor in(in_buf, h, read_only);
 
       // int total_itr = ((nx*ny)*(nz))/VFACTOR;
@@ -106,10 +113,13 @@ void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf, int total_itr){
           struct dPath16 vec = in[i];
           rd_pipe::write(vec);
         }
+        // out << "Finished reading the data\n";
         
       });
       });
 }
+
+
 
 
 template<int VFACTOR>
@@ -351,23 +361,23 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
       derives_calc_ytep_k3( q, data_g);
       derives_calc_ytep_k4( q, data_g);
 
-      PipeConvert_256_512<UFACTOR, 8>(q, total_itr_8);
+      PipeConvert_256_512<4, 8>(q, total_itr_8);
       //write back to memory
       stencil_write<16>(q, out_buf, total_itr_16, kernel_time);
       q.wait();
 
       
-      // reading from memory
-      stencil_read<16>(q, out_buf, total_itr_16);
-      PipeConvert_512_256<8>(q, total_itr_8);
-      derives_calc_ytep_k1( q, data_g);
-      derives_calc_ytep_k2( q, data_g);
-      derives_calc_ytep_k3( q, data_g);
-      derives_calc_ytep_k4( q, data_g);
-      PipeConvert_256_512<UFACTOR, 8>(q, total_itr_8);
-      //write back to memory
-      stencil_write<16>(q, in_buf, total_itr_16, kernel_time);
-      q.wait();
+      // // reading from memory
+      // stencil_read<16>(q, out_buf, total_itr_16);
+      // PipeConvert_512_256<8>(q, total_itr_8);
+      // derives_calc_ytep_k1( q, data_g);
+      // derives_calc_ytep_k2( q, data_g);
+      // derives_calc_ytep_k3( q, data_g);
+      // derives_calc_ytep_k4( q, data_g);
+      // PipeConvert_256_512<4, 8>(q, total_itr_8);
+      // //write back to memory
+      // stencil_write<16>(q, in_buf, total_itr_16, kernel_time);
+      // q.wait();
     }
 
     std::cout << "fimished reading from the pipe\n" << std::endl;
@@ -445,8 +455,10 @@ int main(int argc, char* argv[]) {
   // float * grid_yy_rho_mu_temp_d  = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
 
   IntVector grid_yy_rho_mu_d, grid_yy_rho_mu_temp_d;
-  grid_yy_rho_mu_d.resize(grid_d.data_size_bytes_dim8/v_factor);
-  grid_yy_rho_mu_temp_d.resize(grid_d.data_size_bytes_dim8/v_factor);
+  grid_yy_rho_mu_d.resize(grid_d.data_size_bytes_dim8/(v_factor*sizeof(float)));
+  grid_yy_rho_mu_temp_d.resize(grid_d.data_size_bytes_dim8/(v_factor*sizeof(float)));
+
+  // printf("grid_d.data_size_bytes_dim8:%d\n", grid_d.data_size_bytes_dim8);
 
   for(int i = 0; i < batch; i++){
     populate_rho_mu_yy(&grid_yy_rho_mu[grid_d.dims * i], grid_d);
@@ -456,7 +468,7 @@ int main(int argc, char* argv[]) {
 
   float dt = 0.1;
   for(int i = 0; i < batch; i++){
-    for(int itr = 0; itr < n_iter*6; itr++){
+    for(int itr = 0; itr < n_iter; itr++){
        fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
        calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
 
@@ -485,17 +497,7 @@ int main(int argc, char* argv[]) {
   default_selector d_selector;
 #endif
 
-  // Create vector objects with "vector_size" to store the input and output data.
-  // IntVector in_vec, out_parallel;
-  // IntVectorS in_vec_h, out_sequential;
-  // in_vec.resize(nx/v_factor*ny*nz);
-  // in_vec_h.resize(nx*ny*nz);
-  // out_sequential.resize(nx*ny*nz);
-  // out_parallel.resize(nx/v_factor*ny*nz);
 
-  // Initialize input vectors with values from 0 to vector_size - 1
-  // InitializeVector<v_factor>(in_vec);
-  // InitializeVectorS(in_vec_h);
   try {
     queue q(d_selector,  dpc_common::exception_handler, property::queue::enable_profiling{});
 
@@ -505,11 +507,10 @@ int main(int argc, char* argv[]) {
     // Print out the device information used for the kernel code.
     std::cout << "Running on device: "
               << q.get_device().get_info<info::device::name>() << "\n";
-    std::cout << "Vector size: " << in_vec.size() << "\n";
 
     // Vector addition in DPC++
     
-    stencil_comp(q, grid_yy_rho_mu_d, grid_yy_rho_mu_temp_d, n_iter, nx, ny, nz);
+    stencil_comp(q, grid_yy_rho_mu_d, grid_yy_rho_mu_temp_d, n_iter, nx, ny, nz, batch);
 
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
@@ -522,29 +523,30 @@ int main(int argc, char* argv[]) {
 
    std::cout << "No error until here\n";
 
+   const int struct_s = 8;
+
   // Verify that the two vectors are equal. 
-  for(int k = 0; k < nz; k++){ 
-    for(int j = 0; j < ny; j++){
-      for(int i = 0; i < nx/v_factor; i++){
-        for(int v = 0; v < v_factor; v++){
-          int ind = k*nx*ny + j*nx + i*v_factor;
-          float chk = fabs((in_vec_h.at(ind+v) - in_vec.at(ind/v_factor).data[v])/(in_vec_h.at(ind+v)));
-          if(chk > 0.00001 && fabs(in_vec_h.at(ind+v)) > 0.00001){
-            std::cout << "j,i, k, ind: " << j  << " " << i << " " << k << " " << ind << " " << in_vec_h.at(ind+v) << " " << in_vec.at(ind/v_factor).data[v] <<  std::endl;
-            return -1;
-          }
+  int xblk = (nx+2*ORDER);
+  for(int k = 0; k < grid_d.grid_size_z; k++){ 
+    for(int j = 0; j < grid_d.grid_size_y; j++){
+      for(int i = 0; i < grid_d.grid_size_x; i++){
+        std::cout << "i, j, k, grid_yy_rho_mu[ind+v]: " << i << " " << j << " " << k << " "; 
+        for(int v = 0; v < struct_s; v++){
+          int ind = (k*grid_d.grid_size_x*grid_d.grid_size_y + j*grid_d.grid_size_x + i)*struct_s;
+          // float chk = fabs((grid_yy_rho_mu[ind+v] - grid_yy_rho_mu_d.at(ind/v_factor).data[v])/(grid_yy_rho_mu[ind+v]));
+          // std::cout << "j,i, k, chk: " << j  << " " << i*v_factor+v << " " << k << " " << chk << " " << grid_yy_rho_mu[ind+v] << " " << grid_yy_rho_mu_d.at(ind/v_factor).data[v] <<  std::endl;
+          int s_ind = v+ (i & 1)*8;
+          std::cout << "(" << grid_yy_rho_mu[ind+v] << "," << grid_yy_rho_mu_temp_d.at(ind/v_factor).data[s_ind] << ") ";
+          // if(chk > 0.00001 && fabs(grid_yy_rho_mu[ind+v]) > 0.00001 && !isnan(chk)){
+          //   std::cout << "j,i, k, ind: " << j  << " " << i*v_factor+v << " " << k << " " << ind << " " << grid_yy_rho_mu[ind+v] << " " << grid_yy_rho_mu_d.at(ind/v_factor).data[v] <<  std::endl;
+          //   return -1;
+          // }
         }
+        std::cout << "\n";
       }
     }
   }
 
-
-  float * grid_yy_rho_mu              = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
-  float * grid_yy_rho_mu_temp         = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
-  float * grid_k1                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
-  float * grid_k2                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
-  float * grid_k3                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
-  float * grid_k4                     = (float*)aligned_alloc(4096, grid_d.data_size_bytes_dim8);
 
   free(grid_yy_rho_mu);
   free(grid_yy_rho_mu_temp);
@@ -554,7 +556,7 @@ int main(int argc, char* argv[]) {
   free(grid_k4);
 
   grid_yy_rho_mu_d.clear();
-  grid_yy_rho_mu_temp.clear();
+  grid_yy_rho_mu_temp_d.clear();
 
 
   std::cout << "Vector add successfully completed on device.\n";

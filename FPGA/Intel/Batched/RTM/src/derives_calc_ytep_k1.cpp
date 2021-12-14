@@ -216,48 +216,32 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 
 			// X ARM
 
-			float i_X_ARM_0[2*ORDER+1] = {s_0_4_4.data[3], s_1_4_4.data[3], s_2_4_4.data[3], s_3_4_4.data[3], s_4_4_4.data[3], s_5_4_4.data[3], s_6_4_4.data[3], s_7_4_4.data[3], s_8_4_4.data[3]}; 
-
-			float i_X_ARM_1[2*ORDER+1] = {s_0_4_4.data[4], s_1_4_4.data[4], s_2_4_4.data[4], s_3_4_4.data[4], s_4_4_4.data[4], s_5_4_4.data[4], s_6_4_4.data[4], s_7_4_4.data[4], s_8_4_4.data[4]}; 
-
-			float i_X_ARM_2[2*ORDER+1] = {s_0_4_4.data[5], s_1_4_4.data[5], s_2_4_4.data[5], s_3_4_4.data[5], s_4_4_4.data[5], s_5_4_4.data[5], s_6_4_4.data[5], s_7_4_4.data[5], s_8_4_4.data[5]}; 
-
-			float i_X_ARM_3[2*ORDER+1] = {s_0_4_4.data[6], s_1_4_4.data[6], s_2_4_4.data[6], s_3_4_4.data[6], s_4_4_4.data[6], s_5_4_4.data[6], s_6_4_4.data[6], s_7_4_4.data[6], s_8_4_4.data[6]}; 
-
-			float i_X_ARM_4[2*ORDER+1] = {s_0_4_4.data[7], s_1_4_4.data[7], s_2_4_4.data[7], s_3_4_4.data[7], s_4_4_4.data[7], s_5_4_4.data[7], s_6_4_4.data[7], s_7_4_4.data[7], s_8_4_4.data[7]}; 
-
-			float i_X_ARM_5[2*ORDER+1] = {s_0_4_4.data[8], s_1_4_4.data[8], s_2_4_4.data[8], s_3_4_4.data[8], s_4_4_4.data[8], s_5_4_4.data[8], s_6_4_4.data[8], s_7_4_4.data[8], s_8_4_4.data[8]};
+			float X_ARM_0[2*ORDER+1] = {s_0_4_4.data[2], s_1_4_4.data[2], s_2_4_4.data[2], s_3_4_4.data[2], s_4_4_4.data[2], s_5_4_4.data[2], s_6_4_4.data[2], s_7_4_4.data[2], s_8_4_4.data[2]}; 
+			float X_ARM_1[2*ORDER+1] = {s_0_4_4.data[3], s_1_4_4.data[3], s_2_4_4.data[3], s_3_4_4.data[3], s_4_4_4.data[3], s_5_4_4.data[3], s_6_4_4.data[3], s_7_4_4.data[3], s_8_4_4.data[3]}; 
+			float X_ARM_2[2*ORDER+1] = {s_0_4_4.data[4], s_1_4_4.data[4], s_2_4_4.data[4], s_3_4_4.data[4], s_4_4_4.data[4], s_5_4_4.data[4], s_6_4_4.data[4], s_7_4_4.data[4], s_8_4_4.data[4]}; 
+			float X_ARM_3[2*ORDER+1] = {s_0_4_4.data[5], s_1_4_4.data[5], s_2_4_4.data[5], s_3_4_4.data[5], s_4_4_4.data[5], s_5_4_4.data[5], s_6_4_4.data[5], s_7_4_4.data[5], s_8_4_4.data[5]}; 
+			float X_ARM_4[2*ORDER+1] = {s_0_4_4.data[6], s_1_4_4.data[6], s_2_4_4.data[6], s_3_4_4.data[6], s_4_4_4.data[6], s_5_4_4.data[6], s_6_4_4.data[6], s_7_4_4.data[6], s_8_4_4.data[6]}; 
+			float X_ARM_5[2*ORDER+1] = {s_0_4_4.data[7], s_1_4_4.data[7], s_2_4_4.data[7], s_3_4_4.data[7], s_4_4_4.data[7], s_5_4_4.data[7], s_6_4_4.data[7], s_7_4_4.data[7], s_8_4_4.data[7]};
 
 		
 			// Y ARM
 
-			float i_Y_ARM_0[2*ORDER+1] = {s_4_0_4.data[3], s_4_1_4.data[3], s_4_2_4.data[3], s_4_3_4.data[3], s_4_4_4.data[3], s_4_5_4.data[3], s_4_6_4.data[3], s_4_7_4.data[3], s_4_8_4.data[3]}; 
-
-			float i_Y_ARM_1[2*ORDER+1] = {s_4_0_4.data[4], s_4_1_4.data[4], s_4_2_4.data[4], s_4_3_4.data[4], s_4_4_4.data[4], s_4_5_4.data[4], s_4_6_4.data[4], s_4_7_4.data[4], s_4_8_4.data[4]}; 
-
-			float i_Y_ARM_2[2*ORDER+1] = {s_4_0_4.data[5], s_4_1_4.data[5], s_4_2_4.data[5], s_4_3_4.data[5], s_4_4_4.data[5], s_4_5_4.data[5], s_4_6_4.data[5], s_4_7_4.data[5], s_4_8_4.data[5]}; 
-
-			float i_Y_ARM_3[2*ORDER+1] = {s_4_0_4.data[6], s_4_1_4.data[6], s_4_2_4.data[6], s_4_3_4.data[6], s_4_4_4.data[6], s_4_5_4.data[6], s_4_6_4.data[6], s_4_7_4.data[6], s_4_8_4.data[6]};
-
-			float i_Y_ARM_4[2*ORDER+1] = {s_4_0_4.data[7], s_4_1_4.data[7], s_4_2_4.data[7], s_4_3_4.data[7], s_4_4_4.data[7], s_4_5_4.data[7], s_4_6_4.data[7], s_4_7_4.data[7], s_4_8_4.data[7]};
-
-			float i_Y_ARM_5[2*ORDER+1] = {s_4_0_4.data[8], s_4_1_4.data[8], s_4_2_4.data[8], s_4_3_4.data[8], s_4_4_4.data[8], s_4_5_4.data[8], s_4_6_4.data[8], s_4_7_4.data[8], s_4_8_4.data[8]};
-
+			float Y_ARM_0[2*ORDER+1] = {s_4_0_4.data[2], s_4_1_4.data[2], s_4_2_4.data[2], s_4_3_4.data[2], s_4_4_4.data[2], s_4_5_4.data[2], s_4_6_4.data[2], s_4_7_4.data[2], s_4_8_4.data[2]}; 
+			float Y_ARM_1[2*ORDER+1] = {s_4_0_4.data[3], s_4_1_4.data[3], s_4_2_4.data[3], s_4_3_4.data[3], s_4_4_4.data[3], s_4_5_4.data[3], s_4_6_4.data[3], s_4_7_4.data[3], s_4_8_4.data[3]}; 
+			float Y_ARM_2[2*ORDER+1] = {s_4_0_4.data[4], s_4_1_4.data[4], s_4_2_4.data[4], s_4_3_4.data[4], s_4_4_4.data[4], s_4_5_4.data[4], s_4_6_4.data[4], s_4_7_4.data[4], s_4_8_4.data[4]}; 
+			float Y_ARM_3[2*ORDER+1] = {s_4_0_4.data[5], s_4_1_4.data[5], s_4_2_4.data[5], s_4_3_4.data[5], s_4_4_4.data[5], s_4_5_4.data[5], s_4_6_4.data[5], s_4_7_4.data[5], s_4_8_4.data[5]};
+			float Y_ARM_4[2*ORDER+1] = {s_4_0_4.data[6], s_4_1_4.data[6], s_4_2_4.data[6], s_4_3_4.data[6], s_4_4_4.data[6], s_4_5_4.data[6], s_4_6_4.data[6], s_4_7_4.data[6], s_4_8_4.data[6]};
+			float Y_ARM_5[2*ORDER+1] = {s_4_0_4.data[7], s_4_1_4.data[7], s_4_2_4.data[7], s_4_3_4.data[7], s_4_4_4.data[7], s_4_5_4.data[7], s_4_6_4.data[7], s_4_7_4.data[7], s_4_8_4.data[7]};
 			
 
 			// Z ARM
 
-			float i_Z_ARM_0[2*ORDER+1] = {s_4_4_0.data[3], s_4_4_1.data[3], s_4_4_2.data[3], s_4_4_3.data[3], s_4_4_4.data[3], s_4_4_5.data[3], s_4_4_6.data[3], s_4_4_7.data[3], s_4_4_8.data[3]}; 
-
-			float i_Z_ARM_1[2*ORDER+1] = {s_4_4_0.data[4], s_4_4_1.data[4], s_4_4_2.data[4], s_4_4_3.data[4], s_4_4_4.data[4], s_4_4_5.data[4], s_4_4_6.data[4], s_4_4_7.data[4], s_4_4_8.data[4]}; 
-
-			float i_Z_ARM_2[2*ORDER+1] = {s_4_4_0.data[5], s_4_4_1.data[5], s_4_4_2.data[5], s_4_4_3.data[5], s_4_4_4.data[5], s_4_4_5.data[5], s_4_4_6.data[5], s_4_4_7.data[5], s_4_4_8.data[5]}; 
-
-			float i_Z_ARM_3[2*ORDER+1] = {s_4_4_0.data[6], s_4_4_1.data[6], s_4_4_2.data[6], s_4_4_3.data[6], s_4_4_4.data[6], s_4_4_5.data[6], s_4_4_6.data[6], s_4_4_7.data[6], s_4_4_8.data[6]};
-
-			float i_Z_ARM_4[2*ORDER+1] = {s_4_4_0.data[7], s_4_4_1.data[7], s_4_4_2.data[7], s_4_4_3.data[7], s_4_4_4.data[7], s_4_4_5.data[7], s_4_4_6.data[7], s_4_4_7.data[7], s_4_4_8.data[7]};
-
-			float i_Z_ARM_5[2*ORDER+1] = {s_4_4_0.data[8], s_4_4_1.data[8], s_4_4_2.data[8], s_4_4_3.data[8], s_4_4_4.data[8], s_4_4_5.data[8], s_4_4_6.data[8], s_4_4_7.data[8], s_4_4_8.data[8]};
+			float Z_ARM_0[2*ORDER+1] = {s_4_4_0.data[2], s_4_4_1.data[2], s_4_4_2.data[2], s_4_4_3.data[2], s_4_4_4.data[2], s_4_4_5.data[2], s_4_4_6.data[2], s_4_4_7.data[2], s_4_4_8.data[2]}; 
+			float Z_ARM_1[2*ORDER+1] = {s_4_4_0.data[3], s_4_4_1.data[3], s_4_4_2.data[3], s_4_4_3.data[3], s_4_4_4.data[3], s_4_4_5.data[3], s_4_4_6.data[3], s_4_4_7.data[3], s_4_4_8.data[3]}; 
+			float Z_ARM_2[2*ORDER+1] = {s_4_4_0.data[4], s_4_4_1.data[4], s_4_4_2.data[4], s_4_4_3.data[4], s_4_4_4.data[4], s_4_4_5.data[4], s_4_4_6.data[4], s_4_4_7.data[4], s_4_4_8.data[4]}; 
+			float Z_ARM_3[2*ORDER+1] = {s_4_4_0.data[5], s_4_4_1.data[5], s_4_4_2.data[5], s_4_4_3.data[5], s_4_4_4.data[5], s_4_4_5.data[5], s_4_4_6.data[5], s_4_4_7.data[5], s_4_4_8.data[5]};
+			float Z_ARM_4[2*ORDER+1] = {s_4_4_0.data[6], s_4_4_1.data[6], s_4_4_2.data[6], s_4_4_3.data[6], s_4_4_4.data[6], s_4_4_5.data[6], s_4_4_6.data[6], s_4_4_7.data[6], s_4_4_8.data[6]};
+			float Z_ARM_5[2*ORDER+1] = {s_4_4_0.data[7], s_4_4_1.data[7], s_4_4_2.data[7], s_4_4_3.data[7], s_4_4_4.data[7], s_4_4_5.data[7], s_4_4_6.data[7], s_4_4_7.data[7], s_4_4_8.data[7]};
 
 
 
@@ -416,45 +400,46 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 
 
 	  		// calc K dt
-	  		wr_vec.data_dt[2] = wr_vec.data[2] * 0.1f;
-	  		wr_vec.data_dt[5] = wr_vec.data[5] * 0.1f;
+	  		struct dPath wr_vec_dt;
+	  		wr_vec_dt.data[2] = wr_vec.data[2] * 0.1f;
+	  		wr_vec_dt.data[5] = wr_vec.data[5] * 0.1f;
 	  		
-	  		wr_vec.data_dt[3] = wr_vec.data[3] * 0.1f;
-	  		wr_vec.data_dt[6] = wr_vec.data[6] * 0.1f;
+	  		wr_vec_dt.data[3] = wr_vec.data[3] * 0.1f;
+	  		wr_vec_dt.data[6] = wr_vec.data[6] * 0.1f;
 	  		
-	  		wr_vec.data_dt[4] = wr_vec.data[4] * 0.1f;
-	  		wr_vec.data_dt[7] = wr_vec.data[7] * 0.1f;
+	  		wr_vec_dt.data[4] = wr_vec.data[4] * 0.1f;
+	  		wr_vec_dt.data[7] = wr_vec.data[7] * 0.1f;
 
-	  		wr_vec.data_dt[0] = s_4_4_4.data[0];
-	  		wr_vec.data_dt[1] = s_4_4_4.data[1];
+	  		wr_vec_dt.data[0] = s_4_4_4.data[0];
+	  		wr_vec_dt.data[1] = s_4_4_4.data[1];
 
 
 	  		struct dPath y_tmp_vec;
 
 	  		// calc Y temp
-	  		y_tmp_vec.data[2] = s_4_4_4.data[2] + wr_vec.data_dt[2]*0.5f;
-	  		y_tmp_vec.data[5] = s_4_4_4.data[5] + wr_vec.data_dt[5]*0.5f;
+	  		y_tmp_vec.data[2] = s_4_4_4.data[2] + wr_vec_dt.data[2]*0.5f;
+	  		y_tmp_vec.data[5] = s_4_4_4.data[5] + wr_vec_dt.data[5]*0.5f;
 	  	
-	  		y_tmp_vec.data[3] = s_4_4_4.data[3] + wr_vec.data_dt[3]*0.5f;
-	  		y_tmp_vec.data[6] = s_4_4_4.data[6] + wr_vec.data_dt[6]*0.5f;
+	  		y_tmp_vec.data[3] = s_4_4_4.data[3] + wr_vec_dt.data[3]*0.5f;
+	  		y_tmp_vec.data[6] = s_4_4_4.data[6] + wr_vec_dt.data[6]*0.5f;
 	  	
-	  		y_tmp_vec.data[4] = s_4_4_4.data[4] + wr_vec.data_dt[4]*0.5f;
-	  		y_tmp_vec.data[7] = s_4_4_4.data[7] + wr_vec.data_dt[7]*0.5f;
+	  		y_tmp_vec.data[4] = s_4_4_4.data[4] + wr_vec_dt.data[4]*0.5f;
+	  		y_tmp_vec.data[7] = s_4_4_4.data[7] + wr_vec_dt.data[7]*0.5f;
 
 	  		y_tmp_vec.data[0] = s_4_4_4.data[0];
 	  		y_tmp_vec.data[1] = s_4_4_4.data[1];
 
 
-	  		struct dPath y_final_vec
+	  		struct dPath y_final_vec;
 	  		// calc Y final
-	  		y_final_vec.data[2] = s_4_4_4.data[2] + wr_vec.data_dt[2] *  0.1666666667f;
-	  		y_final_vec.data[5] = s_4_4_4.data[5] + wr_vec.data_dt[5] *  0.1666666667f;
+	  		y_final_vec.data[2] = s_4_4_4.data[2] + wr_vec_dt.data[2] *  0.1666666667f;
+	  		y_final_vec.data[5] = s_4_4_4.data[5] + wr_vec_dt.data[5] *  0.1666666667f;
 
-	  		y_final_vec.data[3] = s_4_4_4.data[3] + wr_vec.data_dt[3] *  0.1666666667f;
-	  		y_final_vec.data[6] = s_4_4_4.data[6] + wr_vec.data_dt[6] *  0.1666666667f;
+	  		y_final_vec.data[3] = s_4_4_4.data[3] + wr_vec_dt.data[3] *  0.1666666667f;
+	  		y_final_vec.data[6] = s_4_4_4.data[6] + wr_vec_dt.data[6] *  0.1666666667f;
 
-	  		y_final_vec.data[4] = s_4_4_4.data[4] + wr_vec.data_dt[4] *  0.1666666667f;
-	  		y_final_vec.data[7] = s_4_4_4.data[7] + wr_vec.data_dt[7] *  0.1666666667f;
+	  		y_final_vec.data[4] = s_4_4_4.data[4] + wr_vec_dt.data[4] *  0.1666666667f;
+	  		y_final_vec.data[7] = s_4_4_4.data[7] + wr_vec_dt.data[7] *  0.1666666667f;
 
 	  		y_final_vec.data[0] = s_4_4_4.data[0];
 	  		y_final_vec.data[1] = s_4_4_4.data[1];
@@ -469,9 +454,9 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 
 			bool cond_wr = (i >= ORDER) && ( i < grid_sizez + ORDER);
 			if(cond_wr ) {
-				pipeS::PipeAt<0>::write(wr_buffer);
-				pipeS::PipeAt<10>::write(yy);
-				pipeS::PipeAt<20>::write(yy_final);
+				pipeS::PipeAt<1>::write(update_j);
+				pipeS::PipeAt<11>::write(s_4_4_4);
+				pipeS::PipeAt<21>::write(yy_final_out);
 			}
 
 			// move the cell block

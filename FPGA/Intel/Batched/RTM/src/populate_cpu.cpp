@@ -5,13 +5,15 @@
 #include "rtm.h"
 
 
-int copy_grid(float* grid_s, IntVector& grid_d, int grid_size){
-    memcpy(grid_d, grid_s, grid_size);
-    for(int i = 0; i < grid_size/16; i++){
-    	for(int v = 0; v < 16; v++){
-    		grid_d[i].data[v] = grid_s[i*16+v];
-    	}
-    }
+
+int copy_grid(float* grid_s, IntVector &grid_d, int grid_size){
+  printf("grid_size:%d\n", grid_size);
+  for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
+      for(int v = 0; v < 16; v++){
+          grid_d[i].data[v] = grid_s[i*16+v];
+      }
+
+  }
     return 0;
 }
 
