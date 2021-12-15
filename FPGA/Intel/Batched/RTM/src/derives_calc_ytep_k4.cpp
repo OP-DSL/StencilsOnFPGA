@@ -450,8 +450,8 @@ static void derives_calc_ytep_k4( queue &q, struct data_G data_g){
 	  		yy_final_vec.data[4] += wr_vec_dt.data[4] * 0.1666666667f;
 	  		yy_final_vec.data[7] += wr_vec_dt.data[7] * 0.1666666667f;
 
-	  		yy_final_vec.data[0] += wr_vec_dt.data[0];
-	  		yy_final_vec.data[1] += wr_vec_dt.data[1];
+	  		yy_final_vec.data[0] = wr_vec_dt.data[0];
+	  		yy_final_vec.data[1] = wr_vec_dt.data[1];
 
 
 	  		// calc Y temp

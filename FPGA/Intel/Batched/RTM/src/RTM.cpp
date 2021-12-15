@@ -368,16 +368,18 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
 
       
       // // reading from memory
-      // stencil_read<16>(q, out_buf, total_itr_16);
-      // PipeConvert_512_256<8>(q, total_itr_8);
-      // derives_calc_ytep_k1( q, data_g);
-      // derives_calc_ytep_k2( q, data_g);
-      // derives_calc_ytep_k3( q, data_g);
-      // derives_calc_ytep_k4( q, data_g);
-      // PipeConvert_256_512<4, 8>(q, total_itr_8);
-      // //write back to memory
-      // stencil_write<16>(q, in_buf, total_itr_16, kernel_time);
-      // q.wait();
+      stencil_read<16>(q, out_buf, total_itr_16);
+      PipeConvert_512_256<8>(q, total_itr_8);
+
+      derives_calc_ytep_k1( q, data_g);
+      derives_calc_ytep_k2( q, data_g);
+      derives_calc_ytep_k3( q, data_g);
+      derives_calc_ytep_k4( q, data_g);
+
+      PipeConvert_256_512<4, 8>(q, total_itr_8);
+      //write back to memory
+      stencil_write<16>(q, in_buf, total_itr_16, kernel_time);
+      q.wait();
     }
 
     std::cout << "fimished reading from the pipe\n" << std::endl;
@@ -468,7 +470,7 @@ int main(int argc, char* argv[]) {
 
   float dt = 0.1;
   for(int i = 0; i < batch; i++){
-    for(int itr = 0; itr < n_iter; itr++){
+    for(int itr = 0; itr < n_iter*2; itr++){
        fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
        calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
 
@@ -530,19 +532,19 @@ int main(int argc, char* argv[]) {
   for(int k = 0; k < grid_d.grid_size_z; k++){ 
     for(int j = 0; j < grid_d.grid_size_y; j++){
       for(int i = 0; i < grid_d.grid_size_x; i++){
-        std::cout << "i, j, k, grid_yy_rho_mu[ind+v]: " << i << " " << j << " " << k << " "; 
+        // std::cout << "i, j, k, grid_yy_rho_mu[ind+v]: " << i << " " << j << " " << k << " "; 
         for(int v = 0; v < struct_s; v++){
           int ind = (k*grid_d.grid_size_x*grid_d.grid_size_y + j*grid_d.grid_size_x + i)*struct_s;
-          // float chk = fabs((grid_yy_rho_mu[ind+v] - grid_yy_rho_mu_d.at(ind/v_factor).data[v])/(grid_yy_rho_mu[ind+v]));
-          // std::cout << "j,i, k, chk: " << j  << " " << i*v_factor+v << " " << k << " " << chk << " " << grid_yy_rho_mu[ind+v] << " " << grid_yy_rho_mu_d.at(ind/v_factor).data[v] <<  std::endl;
           int s_ind = v+ (i & 1)*8;
-          std::cout << "(" << grid_yy_rho_mu[ind+v] << "," << grid_yy_rho_mu_temp_d.at(ind/v_factor).data[s_ind] << ") ";
-          // if(chk > 0.00001 && fabs(grid_yy_rho_mu[ind+v]) > 0.00001 && !isnan(chk)){
-          //   std::cout << "j,i, k, ind: " << j  << " " << i*v_factor+v << " " << k << " " << ind << " " << grid_yy_rho_mu[ind+v] << " " << grid_yy_rho_mu_d.at(ind/v_factor).data[v] <<  std::endl;
-          //   return -1;
-          // }
+          float chk = fabs((grid_yy_rho_mu[ind+v] - grid_yy_rho_mu_d.at(ind/v_factor).data[s_ind])/(grid_yy_rho_mu[ind+v]));
+          
+          // std::cout << "(" << grid_yy_rho_mu[ind+v] << "," << grid_yy_rho_mu_d.at(ind/v_factor).data[s_ind] << ") ";
+          if(chk > 0.0001 && fabs(grid_yy_rho_mu[ind+v]) > 0.00001 && !isnan(chk)){
+            std::cout << "j,i, k, ind: " << j  << " " << i*v_factor+v << " " << k << " " << ind << " " << grid_yy_rho_mu[ind+v] << " " << grid_yy_rho_mu_d.at(ind/v_factor).data[s_ind] <<  std::endl;
+            return -1;
+          }
         }
-        std::cout << "\n";
+        // std::cout << "\n";
       }
     }
   }
