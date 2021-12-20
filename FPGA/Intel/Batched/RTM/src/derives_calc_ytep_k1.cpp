@@ -5,6 +5,9 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 	event e1 = q.submit([&](handler &h) {
     h.single_task<class derives_calc_ytep_k1>([=] () [[intel::kernel_args_restrict]]{
 
+    	
+
+
 		unsigned short grid_sizex = data_g.grid_sizex;
 		unsigned short sizex = data_g.sizex;
 		unsigned short sizey = data_g.sizey;

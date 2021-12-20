@@ -52,8 +52,8 @@ size_t vector_size = 10000;
 typedef std::vector<struct dPath16> IntVector; 
 typedef std::vector<float> IntVectorS; 
 
-using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8000000>;
-using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8000000>;
+using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8>;
+using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8>;
 
 #define UFACTOR 2
 
@@ -63,7 +63,7 @@ struct pipeS{
 
   template <size_t idx>
   struct Pipes{
-    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8000000>;
+    using pipeA = INTEL::pipe<struct_id<idx>, dPath, 8>;
   };
 
   template <size_t idx>
@@ -151,94 +151,6 @@ void PipeConvert_512_256(queue &q, int total_itr){
     });
 }
 
-template <size_t idx>  struct struct_idX;
-template<int idx, int IdX, int DMAX, int VFACTOR>
-void stencil_compute(queue &q, ac_int<14,true>  nx, ac_int<14,true>  ny, ac_int<14,true>  nz, int total_itr){
-    event e2 = q.submit([&](handler &h) {
-    std::string instance_name="compute"+std::to_string(idx);
-    h.single_task<class struct_idX<IdX>>([=] () [[intel::kernel_args_restrict]]{
-    
-    // int total_itr = ((nx/VFACTOR)*(ny*nz+1));
-    struct dPath s_1_2, s_2_1, s_1_1, s_0_1, s_1_0;
-
-    const int max_dpethl = DMAX/VFACTOR;
-
-    struct dPath wind1[max_dpethl];
-    struct dPath wind2[max_dpethl];
-
-    struct dPath vec_wr;
-    [[intel::fpga_register]] float mid_row[10];
-    ac_int<14,true>  i_ld = 0;
-
-
-    short id = 0, jd = 0, kd = 0;
-    unsigned short rEnd = (nx/VFACTOR)-1;
-    [[intel::initiation_interval(1)]]
-    for(int itr = 0; itr < total_itr; itr++){
-      ac_int<14,true>  i = id; 
-      ac_int<14,true>  j = jd; 
-      ac_int<14,true>  k = kd;
-      ac_int<14,true>  i_l = i_ld;
-
-      if(i == rEnd){
-        id = 0;
-      } else {
-        id++;
-      }
-
-      if(i == rEnd && j == ny){
-        jd = 1;
-      } else if(i == rEnd){
-        jd++;
-      }
-
-      if(i == rEnd && j == ny){
-        kd++;
-      }
-
-
-
-      s_1_0 = wind2[i_l];
-
-      s_0_1 = s_1_1;
-      wind2[i_l] = s_0_1;
-
-      s_1_1 = s_2_1;
-      s_2_1 = wind1[i_l];
-
-      if(itr < (nx/VFACTOR)*ny*nz){
-        s_1_2 = pipeS::PipeAt<idx>::read();
-      }
-
-      wind1[i_l] = s_1_2;
-
-      if(i_l >= nx/VFACTOR -2){
-        i_ld = 0;
-      } else {
-        i_ld++;
-      }
-
-      #pragma unroll VFACTOR
-      for(int v = 0; v < VFACTOR; v++){
-        mid_row[v+1] = s_1_1.data[v]; 
-      }
-      mid_row[0] = s_0_1.data[VFACTOR-1];
-      mid_row[VFACTOR+1] = s_2_1.data[0];
-
-      #pragma unroll VFACTOR
-      for(int v = 0; v < VFACTOR; v++){
-        int i_ind = i *VFACTOR + v;
-        float val =  (mid_row[v] + mid_row[v+2] + s_1_0.data[v] + s_1_2.data[v])/8 + (mid_row[v+1])/2;
-        vec_wr.data[v] = (i_ind > 0 && i_ind < nx-1 && j > 1 && j < ny ) ? val : mid_row[v+1];
-      }
-      if(itr >= (nx/VFACTOR)){
-        pipeS::PipeAt<idx+1>::write(vec_wr);
-      }
-    }
-    
-  });
-  });
-}
 
 template <int idx, int VFACTOR>
 void PipeConvert_256_512(queue &q, int total_itr){
@@ -292,19 +204,19 @@ void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf, int total_itr, 
 }
 
 
-template <int N, int n> struct loop {
-  static void instantiate(queue &q, int nx, int ny, int nz, int total_itr){
-    loop<N-1, n-1>::instantiate(q, nx, ny, nz, total_itr);
-    stencil_compute<N-1, n-1, 4096, 8>(q, nx, ny, nz, total_itr);
-  }
-};
+// template <int N, int n> struct loop {
+//   static void instantiate(queue &q, int nx, int ny, int nz, int total_itr){
+//     loop<N-1, n-1>::instantiate(q, nx, ny, nz, total_itr);
+//     stencil_compute<N-1, n-1, 4096, 8>(q, nx, ny, nz, total_itr);
+//   }
+// };
 
-template<> 
-struct loop<1, 1>{
-  static void instantiate(queue &q, int nx, int ny, int nz, int total_itr){
-    stencil_compute<0, 0, 4096, 8>(q, nx, ny, nz, total_itr);
-  }
-};
+// template<> 
+// struct loop<1, 1>{
+//   static void instantiate(queue &q, int nx, int ny, int nz, int total_itr){
+//     stencil_compute<0, 0, 4096, 8>(q, nx, ny, nz, total_itr);
+//   }
+// };
 
 // loop<90> l;
 
@@ -367,7 +279,7 @@ void stencil_comp(queue &q, IntVector &input, IntVector &output, int n_iter, int
       q.wait();
 
       
-      // // reading from memory
+      // // // reading from memory
       stencil_read<16>(q, out_buf, total_itr_16);
       PipeConvert_512_256<8>(q, total_itr_8);
 
