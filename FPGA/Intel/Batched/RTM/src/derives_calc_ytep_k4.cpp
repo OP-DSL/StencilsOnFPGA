@@ -82,7 +82,7 @@ static void derives_calc_ytep_k4( queue &q, struct data_G data_g){
 		unsigned short j_p, j_l, j_p_diff, j_l_diff, j_p_4;
 
 		// out << "Itr: " << gridsize << "\n";
-
+		[[intel::initiation_interval(1)]]
 		for(unsigned int itr = 0; itr < gridsize; itr++) {
 			// printf("itr:%d\n", itr);
 
@@ -215,29 +215,38 @@ static void derives_calc_ytep_k4( queue &q, struct data_G data_g){
 			window_yy_final[j_p_4] = yy_final_vec_tmp;
 
 
-			j_p_dum++;
-			if(j_p_dum >= plane_size){
+			if(j_p >= plane_size-1){
 				j_p_dum = 0;
+			} else {
+				j_p_dum++;
 			}
 
-			j_l_dum++;
-			if(j_l_dum >= grid_sizex){
+			
+			if(j_l >= grid_sizex-1){
 				j_l_dum = 0;
+			} else {
+				j_l_dum++;
 			}
 
-			j_p_diff_dum++;
-			if(j_p_diff_dum >= plane_diff){
+			
+			if(j_p_diff >= plane_diff - 1){
 				j_p_diff_dum = 0;
+			} else {
+				j_p_diff_dum++;
 			}
 
-			j_l_diff_dum++;
-			if(j_l_diff_dum >= line_diff){
+			
+			if(j_l_diff >= line_diff - 1){
 				j_l_diff_dum = 0;
+			} else {
+				j_l_diff_dum++;
 			}
 
-			j_p_4_dum++;
-			if(j_p_4_dum >= (plane_size << 2)){
+			
+			if(j_p_4 >= (plane_size << 2) -1){
 				j_p_4_dum = 0;
+			} else {
+				j_p_4_dum++;
 			}
 
 
@@ -340,6 +349,8 @@ static void derives_calc_ytep_k4( queue &q, struct data_G data_g){
 		  	float pzy=0.0;
 		  	float pzz=0.0;
 
+		  	const int iU_FACTOR = ORDER*2+1;
+		  	#pragma unroll iU_FACTOR
 		  	for(int l=0;l <= ORDER*2; l++){
 			    pxx += X_ARM_0[l] * c[l];
 			    pyx += X_ARM_1[l] * c[l];
