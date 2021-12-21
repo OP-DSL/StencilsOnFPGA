@@ -1,0 +1,59 @@
+CXX := dpcpp
+CXXFLAGS = -O2 -g -std=c++17
+
+SRC := src/RTM.cpp
+USM_SRC := src/RTM_usm.cpp
+
+.PHONY: fpga_emu run_emu fpga_emu_usm run_emu_usm clean 
+
+fpga_emu: RTM.fpga_emu
+fpga_emu_usm: vector-add-usm.fpga_emu_usm
+
+hw: RTM.fpga
+hw_usm: vector-add-usm.fpga
+
+report: RTM_report.a
+report_usm: vector-add-usm_report.a_usm
+
+RTM.fpga_emu: $(SRC)
+	$(CXX) $(CXXFLAGS) -fintelfpga $^ -o $@ -DFPGA_EMULATOR=1 -Xsboard=intel_s10sx_pac:pac_s10
+vector-add-usm.fpga_emu_usm: $(USM_SRC)
+	$(CXX) $(CXXFLAGS) -fintelfpga $^ -o $@ -DFPGA_EMULATOR=1 -Xsboard=intel_s10sx_pac:pac_s10_usm
+
+
+a.o: $(SRC)
+	$(CXX) $(CXXFLAGS) -fintelfpga -c $^ -o $@ -DFPGA=1 -Xsboard=intel_s10sx_pac:pac_s10
+a_usm.o: $(USM_SRC) 
+	$(CXX) $(CXXFLAGS) -fintelfpga -c $^ -o $@ -DFPGA=1	-Xsboard=intel_s10sx_pac:pac_s10_usm
+
+RTM.fpga: a.o
+	$(CXX) $(CXXFLAGS) -fintelfpga $^ -o $@ -Xshardware -Xsboard=intel_s10sx_pac:pac_s10
+vector-add-usm.fpga: a_usm.o
+	$(CXX) $(CXXFLAGS) -fintelfpga $^ -o $@ -Xshardware  -Xsboard=intel_s10sx_pac:pac_s10_usm
+
+run_emu: RTM.fpga_emu
+	./RTM.fpga_emu 1 16 8 8 1
+run_emu_usm: vector-add-usm.fpga_emu_usm
+	./vector-add-usm.fpga_emu_usm 1 16 16 4 1
+
+
+run_hw: RTM.fpga
+	./RTM.fpga
+run_hw_usm: vector-add-usm.fpga
+	./vector-add-usm.fpga	
+
+dev.o: $(SRC)
+	$(CXX) $(CXXFLAGS) -fintelfpga -c $^ -o $@ -DFPGA=1 -Xsboard=intel_s10sx_pac:pac_s10
+dev_usm.o: $(USM_SRC)
+	$(CXX) $(CXXFLAGS) -fintelfpga -c $^ -o $@ -DFPGA=1 -Xsboard=intel_s10sx_pac:pac_s10_usm
+
+
+
+RTM_report.a: dev.o
+	$(CXX) $(CXXFLAGS) -fintelfpga -fsycl-link $^ -o $@ -Xshardware -Xsboard=intel_s10sx_pac:pac_s10
+vector-add-usm_report.a_usm: dev_usm.o
+	$(CXX) $(CXXFLAGS) -fintelfpga -fsycl-link $^ -o $@ -Xshardware  -Xsboard=intel_s10sx_pac:pac_s10_usm
+
+
+clean:
+	rm -rf *.o *.d *.out *.mon *.emu *.aocr *.aoco *.prj *.fpga_emu *.fpga_emu_buffers RTM.fpga  vector-add-usm.fpga *.a
