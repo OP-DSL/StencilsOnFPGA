@@ -36,15 +36,17 @@ using namespace sycl;
 
 
 const int unroll_factor = 2;
-const int v_factor = 16;
+const int v_factor = 24;
 
 struct dPath {
-  [[intel::fpga_register]] float data[8];
+  [[intel::fpga_register]]
+   float data[24];
 };
 
 
 struct dPath16 {
-  [[intel::fpga_register]] float data[16];
+  [[intel::fpga_register]]
+   float data[16];
 };
 
 // Vector type and data size for this example.
@@ -57,19 +59,32 @@ typedef std::vector<float> IntVectorS;
 
 struct pipeS{
   pipeS() = delete;
-  template <size_t idx>  struct struct_id;
+  template <size_t idx>  struct struct_idS;
 
   template <size_t idx>
-  struct Pipes{
-    using pipeA = INTEL::pipe<struct_id<idx>, dPath16, 8>;
+  struct Pipes1{
+    using pipeA = INTEL::pipe<struct_idS<idx>, dPath16, 8000000>;
   };
 
   template <size_t idx>
-  using PipeAt = typename Pipes<idx>::pipeA;
+  using PipeAt = typename Pipes1<idx>::pipeA;
+};
+
+struct pipeM{
+  pipeM() = delete;
+  template <size_t idx>  struct struct_idM;
+
+  template <size_t idx>
+  struct Pipes2{
+    using pipeB = INTEL::pipe<struct_idM<idx>, dPath, 8000000>;
+  };
+
+  template <size_t idx>
+  using PipeAt = typename Pipes2<idx>::pipeB;
 };
 
 
-using PipeBlock = pipeS;
+// using PipeBlock = pipeS;
 
 template <size_t idx>  struct struct_idX;
 
@@ -93,25 +108,29 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 };
 
 #include "populate_cpu.cpp"
-// #include "derives_calc_ytep_k1.cpp"
-// #include "derives_calc_ytep_k2.cpp"
-// #include "derives_calc_ytep_k3.cpp"
-// #include "derives_calc_ytep_k4.cpp"
+#include "derives_calc_ytep_k1.cpp"
+#include "derives_calc_ytep_k2.cpp"
+#include "derives_calc_ytep_k3.cpp"
+#include "derives_calc_ytep_k4.cpp"
 
 template<int idx, int VFACTOR>
-void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<struct dPath16, 1> &in_buf2, int total_itr){
+void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<struct dPath16, 1> &in_buf2, buffer<struct dPath16, 1> &in_buf3, int total_itr){
       event e1 = q.submit([&](handler &h) {
       // cl::sycl::stream out(1024, 256, h);
       accessor in1(in_buf1, h, read_only);
       accessor in2(in_buf2, h, read_only);
-      h.single_task<class struct_idX<idx>>([=] () [[intel::kernel_args_restrict]]{
+      accessor in3(in_buf3, h, read_only);
+      h.single_task<class stencil_read>([=] () [[intel::kernel_args_restrict]]{
 
         [[intel::initiation_interval(1)]]
         for(int i = 0; i < total_itr; i++){
           struct dPath16 vec1 = in1[i];
           struct dPath16 vec2 = in2[i];
+          struct dPath16 vec3 = in3[i];
+
           pipeS::PipeAt<idx>::write(vec1);
           pipeS::PipeAt<idx+1>::write(vec2);
+          pipeS::PipeAt<idx+2>::write(vec3);
         }
         // out << "Finished reading the data\n";
         
@@ -122,22 +141,40 @@ void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<struct dP
 
 
 
-template<int idx1, int idx2, int idx3, int VFACTOR>
-void PipeConvert_2_1(queue &q, int total_itr){
+template<int idx1, int idx2, int VFACTOR>
+void PipeConvert_3_1(queue &q, int total_itr){
       event e1 = q.submit([&](handler &h) {
 
       // int total_itr = ((nx*ny)*(nz))/(VFACTOR);
       h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
+        struct dPath16 data1, data2, data3;
         [[intel::initiation_interval(1)]]
         for(int i = 0; i < total_itr; i++){
-          struct dPath16 data16;
-          if((i&1) == 0){
-            data16 = pipeS::PipeAt<idx1>::read();
-          } else {
-            data16 = pipeS::PipeAt<idx2>::read();
-          }
+          
+          struct dPath out;
+          if((i & 1) == 0){
+            data1 = pipeS::PipeAt<idx1>::read();
+            data2 = pipeS::PipeAt<idx1+1>::read();
+            data3 = pipeS::PipeAt<idx1+2>::read();
+          } 
 
-          pipeS::PipeAt<idx3>::write(data16);
+          struct dPath out1 = {{data1.data[0], data1.data[1], data1.data[2], data1.data[3], data1.data[4], data1.data[5], data1.data[6], data1.data[7],
+                              data1.data[8], data1.data[9], data1.data[10], data1.data[11], data1.data[12], data1.data[13], data1.data[14], data1.data[15],
+                              data2.data[0], data2.data[1], data2.data[2], data2.data[3], data2.data[4], data2.data[5], data2.data[6], data2.data[7]
+
+           }};
+
+          struct dPath out2 = {{data2.data[8], data2.data[9], data2.data[10], data2.data[11], data2.data[12], data2.data[13], data2.data[14], data2.data[15],
+                              data3.data[0], data3.data[1], data3.data[2], data3.data[3], data3.data[4], data3.data[5], data3.data[6], data3.data[7],
+                              data3.data[8], data3.data[9], data3.data[10], data3.data[11], data3.data[12], data3.data[13], data3.data[14], data3.data[15],
+           }};
+
+          if((i & 1) == 0){
+            out = out1;
+          } else {
+            out = out2;
+          }
+          pipeM::PipeAt<idx2>::write(out);
         }
         
       });
@@ -145,20 +182,43 @@ void PipeConvert_2_1(queue &q, int total_itr){
 }
 
 
-template <int idx1, int idx2, int idx3, int VFACTOR>
-void PipeConvert_1_2(queue &q, int total_itr){
+template <int idx1, int idx2, int VFACTOR>
+void PipeConvert_1_3(queue &q, int total_itr){
     event e3 = q.submit([&](handler &h) {
     // accessor out(out_buf, h, write_only);
     h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
       // int total_itr = ((nx*ny)*(nz))/(VFACTOR);
+      struct dPath out1, out2, out;
       [[intel::initiation_interval(1)]]
       for(int i = 0; i < total_itr; i++){
-        struct dPath16 data16 = pipeS::PipeAt<idx1>::read();
-        if((i & 1) == 0){
-          pipeS::PipeAt<idx2>::write(data16);
-        } else {
-          pipeS::PipeAt<idx3>::write(data16);
-        }
+          
+          out = pipeM::PipeAt<idx1>::read();
+
+          if((i&1) == 0) {
+            out1 = out;
+          } else {
+            out2 = out;
+          }
+          
+          struct dPath16 data1 = {{out1.data[0], out1.data[1], out1.data[2], out1.data[3], out1.data[4], out1.data[5], out1.data[6], out1.data[7],
+                                  out1.data[8], out1.data[9], out1.data[10], out1.data[11], out1.data[12], out1.data[13], out1.data[14], out1.data[15]
+          }};
+
+          struct dPath16 data2 = {{out1.data[16], out1.data[17], out1.data[18], out1.data[19], out1.data[20], out1.data[21], out1.data[22], out1.data[23],
+                                  out2.data[0], out2.data[1], out2.data[2], out2.data[3], out2.data[4], out2.data[5], out2.data[6], out2.data[7]
+          }};
+
+          struct dPath16 data3 = {{out2.data[8], out2.data[9], out2.data[10], out2.data[11], out2.data[12], out2.data[13], out2.data[14], out2.data[15],
+                                  out2.data[16], out2.data[17], out2.data[18], out2.data[19], out2.data[20], out2.data[21], out2.data[22], out2.data[23]
+          }};
+
+
+          if((i&1) == 1){
+            pipeS::PipeAt<idx2>::write(data1);
+            pipeS::PipeAt<idx2+1>::write(data2);
+            pipeS::PipeAt<idx2+2>::write(data3);
+          }
+
       }
 
       
@@ -168,19 +228,23 @@ void PipeConvert_1_2(queue &q, int total_itr){
 }
 
 template <int idx, int VFACTOR>
-void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf1, buffer<struct dPath16, 1> &out_buf2, int total_itr, double &kernel_time){
+void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf1, buffer<struct dPath16, 1> &out_buf2, buffer<struct dPath16, 1> &out_buf3, 
+  int total_itr, double &kernel_time){
     event e3 = q.submit([&](handler &h) {
     accessor out1(out_buf1, h, write_only);
     accessor out2(out_buf2, h, write_only);
+    accessor out3(out_buf3, h, write_only);
     std::string instance_name="consumer";
-    h.single_task<class struct_idX<idx>>([=] () [[intel::kernel_args_restrict]]{
+    h.single_task<class stencil_write>([=] () [[intel::kernel_args_restrict]]{
       // int total_itr = ((nx*ny)*(nz))/VFACTOR;
       [[intel::initiation_interval(1)]]
       for(int i = 0; i < total_itr; i++){
         struct dPath16 vec1 = pipeS::PipeAt<idx>::read();
         struct dPath16 vec2 = pipeS::PipeAt<idx+1>::read();
+        struct dPath16 vec3 = pipeS::PipeAt<idx+2>::read();
         out1[i] = vec1;
         out2[i] = vec2;
+        out3[i] = vec3;
       }
       
     });
@@ -213,10 +277,11 @@ void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf1, buffer<struct 
 // Vector add in DPC++ on device: returns sum in 4th parameter "sum_parallel".
 //************************************
 void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &input2, IntVector &output2,
+   IntVector &input3, IntVector &output3,
    int n_iter, int nx, int ny, int nz, int batch) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{input1.size()};
-  int vec_size = input1.size()*2;
+  int vec_size = input1.size()*3;
 
   // Create buffers that hold the data shared between the host and the devices.
   // The buffer destructor is responsible to copy the data back to host when it
@@ -224,8 +289,12 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
   buffer in_buf1(input1);
   buffer out_buf1(output1);
 
+
   buffer in_buf2(input2);
   buffer out_buf2(output2);
+
+  buffer in_buf3(input3);
+  buffer out_buf3(output3);
 
   // Submit a command group to the queue by a lambda function that contains the
   // data access permission and device computation (kernel).
@@ -241,50 +310,50 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
   data_g.grid_sizex = nx+2*ORDER;
   data_g.grid_sizey = ny+2*ORDER;
   data_g.grid_sizez = nz+2*ORDER;
+  data_g.xblocks = data_g.grid_sizex/3;
   data_g.limit_z = nz+3*ORDER;
 
 
   unsigned short grid_sizey_4 = (data_g.grid_sizey - 4);
-  data_g.plane_size = data_g.grid_sizex * data_g.grid_sizey;
+  data_g.plane_size = data_g.xblocks * data_g.grid_sizey;
 
-  data_g.plane_diff = data_g.grid_sizex * grid_sizey_4;
-  data_g.line_diff = data_g.grid_sizex - 4;
+  data_g.plane_diff = data_g.xblocks * grid_sizey_4;
+  data_g.line_diff = data_g.xblocks - 2;
   data_g.gridsize_pr = data_g.plane_size * (data_g.limit_z) * batch;
 
-  unsigned int total_itr_16 = (data_g.plane_size * (data_g.grid_sizez)* batch) >> 1;
-  unsigned int total_itr_32 = total_itr_16 >> 1;
+
+  unsigned totol_8 = (data_g.plane_size * (data_g.grid_sizez)* batch);
+  unsigned int total_itr_48 = totol_8/2;
+  unsigned int total_itr_24 = totol_8;
 
     for(int itr = 0; itr < n_iter; itr++){
 
     // reading from memory
-      stencil_read<0,16>(q, in_buf1, in_buf2, total_itr_32);
-      // stencil_read<1,16>(q, in_buf2, total_itr_32);
-      PipeConvert_2_1<0,1,2, 16>(q, total_itr_16);
+      stencil_read<0,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48);
+      PipeConvert_3_1<0,0, 8>(q, total_itr_24);
 
-      // derives_calc_ytep_k1( q, data_g);
-      // derives_calc_ytep_k2( q, data_g);
-      // derives_calc_ytep_k3( q, data_g);
-      // derives_calc_ytep_k4( q, data_g);
+      derives_calc_ytep_k1( q, data_g);
+      derives_calc_ytep_k2( q, data_g);
+      derives_calc_ytep_k3( q, data_g);
+      derives_calc_ytep_k4( q, data_g);
 
-      PipeConvert_1_2<2,3,4, 16>(q, total_itr_16);
-      stencil_write<3,16>(q, out_buf1, out_buf2, total_itr_32, kernel_time);
-      // stencil_write<4,16>(q, out_buf2, total_itr_32, kernel_time1);
+      PipeConvert_1_3<4, 3, 8>(q, total_itr_24);
+      stencil_write<3,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48, kernel_time);
       q.wait();
 
       
-      // // // reading from memory
-      stencil_read<0,16>(q, out_buf1, out_buf2, total_itr_32);
+      // // // // reading from memory
+      stencil_read<0,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48);
       // stencil_read<1,16>(q, in_buf2, total_itr_32);
-      PipeConvert_2_1<0,1,2, 16>(q, total_itr_16);
+      PipeConvert_3_1<0,0, 8>(q, total_itr_24);
 
-      // derives_calc_ytep_k1( q, data_g);
-      // derives_calc_ytep_k2( q, data_g);
-      // derives_calc_ytep_k3( q, data_g);
-      // derives_calc_ytep_k4( q, data_g);
+      derives_calc_ytep_k1( q, data_g);
+      derives_calc_ytep_k2( q, data_g);
+      derives_calc_ytep_k3( q, data_g);
+      derives_calc_ytep_k4( q, data_g);
 
-      PipeConvert_1_2<2,3,4, 16>(q, total_itr_16);
-      stencil_write<3,16>(q, in_buf1, in_buf2, total_itr_32, kernel_time);
-      // stencil_write<4,16>(q, out_buf2, total_itr_32, kernel_time1);
+      PipeConvert_1_3<4,3, 8>(q, total_itr_24);
+      stencil_write<3,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48, kernel_time);
 
       q.wait();
     }
@@ -329,7 +398,7 @@ int main(int argc, char* argv[]) {
   if (argc > 4) nz = std::stoi(argv[4]);
   if (argc > 5) batch = std::stoi(argv[5]);
 
-  nx = (nx % 8 == 0 ? nx : (nx/8+1)*8);
+  nx = ((nx+ORDER*2) % 6 == 0 ? nx : ((nx+ORDER*2)/6+1)*6 - ORDER*2);
 
   struct Grid_d grid_d;
   grid_d.logical_size_x = nx;
@@ -366,22 +435,29 @@ int main(int argc, char* argv[]) {
 
   IntVector grid_yy_rho_mu_d1, grid_yy_rho_mu_temp_d1;
   IntVector grid_yy_rho_mu_d2, grid_yy_rho_mu_temp_d2;
-  grid_yy_rho_mu_d1.resize(grid_d.data_size_bytes_dim8/(v_factor*sizeof(float)*2));
-  grid_yy_rho_mu_temp_d1.resize(grid_d.data_size_bytes_dim8/(v_factor*sizeof(float)*2));
-  grid_yy_rho_mu_d2.resize(grid_d.data_size_bytes_dim8/(v_factor*sizeof(float)*2));
-  grid_yy_rho_mu_temp_d2.resize(grid_d.data_size_bytes_dim8/(v_factor*sizeof(float)*2));
+  IntVector grid_yy_rho_mu_d3, grid_yy_rho_mu_temp_d3;
+
+  const int DDR_width = 16;
+
+  grid_yy_rho_mu_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+  grid_yy_rho_mu_temp_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+  grid_yy_rho_mu_d2.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+  grid_yy_rho_mu_temp_d2.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+  grid_yy_rho_mu_d3.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+  grid_yy_rho_mu_temp_d3.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+
 
   // printf("grid_d.data_size_bytes_dim8:%d\n", grid_d.data_size_bytes_dim8);
 
   for(int i = 0; i < batch; i++){
     populate_rho_mu_yy(&grid_yy_rho_mu[grid_d.dims * i], grid_d);
   }
-  copy_ToVec(grid_yy_rho_mu, grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_d.data_size_bytes_dim8);
+  copy_ToVec(grid_yy_rho_mu, grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, grid_d.data_size_bytes_dim8);
 
 
   float dt = 0.1;
-  for(int i = 0; i < batch*0; i++){
-    for(int itr = 0; itr < n_iter*2; itr++){
+  for(int i = 0; i < batch; i++){
+    for(int itr = 0; itr < 2*n_iter; itr++){
        fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
        calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
 
@@ -423,20 +499,37 @@ int main(int argc, char* argv[]) {
 
     // Vector addition in DPC++
     
-    stencil_comp(q, grid_yy_rho_mu_d1, grid_yy_rho_mu_temp_d1,  grid_yy_rho_mu_d2, grid_yy_rho_mu_temp_d2, n_iter, nx, ny, nz, batch);
+    stencil_comp(q, grid_yy_rho_mu_d1, grid_yy_rho_mu_temp_d1,  grid_yy_rho_mu_d2, grid_yy_rho_mu_temp_d2,  grid_yy_rho_mu_d3, grid_yy_rho_mu_temp_d3,
+     n_iter, nx, ny, nz, batch);
 
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
     std::terminate();
   }
 
-  copy_FromVec(grid_yy_rho_mu_temp_d1, grid_yy_rho_mu_temp_d2, temp,  grid_d.data_size_bytes_dim8);
-  for(int i = 0; i < grid_d.data_size_bytes_dim8/4; i++){
-    float chk = fabs((grid_yy_rho_mu[i] - temp[i])/(grid_yy_rho_mu[i]));
-    // std::cout << "i: " << i << " " << grid_yy_rho_mu[i] << " " << temp[i] << "\n";
-    if(chk > 0.0001 && fabs(grid_yy_rho_mu[i]) > 0.00001 && !isnan(chk)){
-      std::cout << "i: " << i << " " << grid_yy_rho_mu[i] << " " << temp[i] << "\n";
-      // return -1;
+  copy_FromVec(grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, temp,  grid_d.data_size_bytes_dim8);
+  // for(int i = 0; i < grid_d.data_size_bytes_dim8/4; i++){
+  //   float chk = fabs((grid_yy_rho_mu[i] - temp[i])/(grid_yy_rho_mu[i]));
+  //   // std::cout << "i: " << i << " " << grid_yy_rho_mu_temp[i] << " " << temp[i] << " ";
+  //   if(chk > 0.000001 && fabs(grid_yy_rho_mu[i]) > 0.000001 && !isnan(chk)){
+  //     std::cout << "i: " << i << " " << grid_yy_rho_mu[i] << " " << temp[i] << "\n";
+  //     // return -1;
+  //   }
+  // }
+
+
+  for(int i = 0; i < grid_d.grid_size_z; i++){
+    for(int j = 0; j < grid_d.grid_size_y; j++){
+      for(int k = 0; k  < grid_d.grid_size_x; k++){
+        for(int v= 0; v < 8; v++){
+          int ind = (i*grid_d.grid_size_y*grid_d.grid_size_x + j*grid_d.grid_size_x+k)*8+v;
+          float chk = fabs((grid_yy_rho_mu[ind] - temp[ind])/(grid_yy_rho_mu[ind]));
+          // std::cout << "i: " << i << " " << grid_yy_rho_mu_temp[i] << " " << temp[i] << " ";
+          if(chk > 0.0001 && fabs(grid_yy_rho_mu[ind]) > 0.0001 && !isnan(chk)){
+            std::cout << "i,j,k,v, chk: " << i << " " << j << " " << k << " " << v << " " << chk << " " << grid_yy_rho_mu[ind] << " " << temp[ind] << "\n";
+          }
+        }
+      }
     }
   }
 
@@ -446,29 +539,6 @@ int main(int argc, char* argv[]) {
 
    std::cout << "No error until here\n";
 
-   const int struct_s = 8;
-
-  // Verify that the two vectors are equal. 
-  // int xblk = (nx+2*ORDER);
-  // for(int k = 0; k < grid_d.grid_size_z; k++){ 
-  //   for(int j = 0; j < grid_d.grid_size_y; j++){
-  //     for(int i = 0; i < grid_d.grid_size_x; i++){
-  //       // std::cout << "i, j, k, grid_yy_rho_mu[ind+v]: " << i << " " << j << " " << k << " "; 
-  //       for(int v = 0; v < struct_s; v++){
-  //         int ind = (k*grid_d.grid_size_x*grid_d.grid_size_y + j*grid_d.grid_size_x + i)*struct_s;
-  //         int s_ind = v+ (i & 1)*8;
-  //         float chk = fabs((grid_yy_rho_mu[ind+v] - grid_yy_rho_mu_d.at(ind/v_factor).data[s_ind])/(grid_yy_rho_mu[ind+v]));
-          
-  //         // std::cout << "(" << grid_yy_rho_mu[ind+v] << "," << grid_yy_rho_mu_d.at(ind/v_factor).data[s_ind] << ") ";
-  //         if(chk > 0.0001 && fabs(grid_yy_rho_mu[ind+v]) > 0.00001 && !isnan(chk)){
-  //           std::cout << "j,i, k, ind: " << j  << " " << i*v_factor+v << " " << k << " " << ind << " " << grid_yy_rho_mu[ind+v] << " " << grid_yy_rho_mu_d.at(ind/v_factor).data[s_ind] <<  std::endl;
-  //           return -1;
-  //         }
-  //       }
-  //       // std::cout << "\n";
-  //     }
-  //   }
-  // }
 
 
   free(grid_yy_rho_mu);
@@ -477,11 +547,15 @@ int main(int argc, char* argv[]) {
   free(grid_k2);
   free(grid_k3);
   free(grid_k4);
+  free(temp);
 
   grid_yy_rho_mu_d1.clear();
   grid_yy_rho_mu_temp_d1.clear();
   grid_yy_rho_mu_d2.clear();
   grid_yy_rho_mu_temp_d2.clear();
+  grid_yy_rho_mu_d3.clear();
+  grid_yy_rho_mu_temp_d3.clear();
+
 
   std::cout << "Vector add successfully completed on device.\n";
   return 0;

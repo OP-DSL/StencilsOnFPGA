@@ -88,11 +88,18 @@ struct data_G{
 	unsigned short grid_sizey;
 	unsigned short grid_sizez;
 	unsigned short limit_z;
+	unsigned short xblocks;
 	unsigned int gridsize_pr;
 	unsigned int plane_diff;
 	unsigned int plane_size;
 	unsigned int line_diff;
 	unsigned short outer_loop_limit;
 };
+
+
+
+#define INC0(x) ((x))
+#define INC1(x) ((x+8))
+#define INC2(x) ((x+16))
 
 #endif
