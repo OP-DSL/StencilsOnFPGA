@@ -6,11 +6,30 @@
 
 
 
-int copy_grid(float* grid_s, IntVector &grid_d, int grid_size){
+int copy_ToVec(float* grid_s, IntVector &grid_d1, IntVector &grid_d2, int grid_size){
   printf("grid_size:%d\n", grid_size);
   for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
       for(int v = 0; v < 16; v++){
-          grid_d[i].data[v] = grid_s[i*16+v];
+        if((i & 1) == 0){
+          grid_d1[i/2].data[v] = grid_s[i*16+v];
+        } else {
+          grid_d2[i/2].data[v] = grid_s[i*16+v];
+        }
+      }
+
+  }
+    return 0;
+}
+
+int copy_FromVec(IntVector &grid_d1, IntVector &grid_d2, float* grid_s, int grid_size){
+  printf("grid_size:%d\n", grid_size);
+  for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
+      for(int v = 0; v < 16; v++){
+        if((i & 1) == 0){
+          grid_s[i*16+v] = grid_d1[i/2].data[v];
+        } else {
+          grid_s[i*16+v] = grid_d2[i/2].data[v];
+        }
       }
 
   }
