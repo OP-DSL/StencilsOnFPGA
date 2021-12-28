@@ -44,9 +44,20 @@ struct dPath {
 };
 
 
+struct dPath18 {
+  [[intel::fpga_register]]
+   float data[18];
+};
+
+
 struct dPath16 {
   [[intel::fpga_register]]
    float data[16];
+};
+
+struct dPath2 {
+  [[intel::fpga_register]]
+   float data[2];
 };
 
 // Vector type and data size for this example.
@@ -63,7 +74,7 @@ struct pipeS{
 
   template <size_t idx>
   struct Pipes1{
-    using pipeA = INTEL::pipe<struct_idS<idx>, dPath16, 8000000>;
+    using pipeA = INTEL::pipe<struct_idS<idx>, dPath16, 8>;
   };
 
   template <size_t idx>
@@ -76,7 +87,7 @@ struct pipeM{
 
   template <size_t idx>
   struct Pipes2{
-    using pipeB = INTEL::pipe<struct_idM<idx>, dPath, 8000000>;
+    using pipeB = INTEL::pipe<struct_idM<idx>, dPath, 8>;
   };
 
   template <size_t idx>
@@ -332,12 +343,18 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
       stencil_read<0,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48);
       PipeConvert_3_1<0,0, 8>(q, total_itr_24);
 
-      derives_calc_ytep_k1( q, data_g);
-      derives_calc_ytep_k2( q, data_g);
-      derives_calc_ytep_k3( q, data_g);
-      derives_calc_ytep_k4( q, data_g);
+      derives_calc_ytep_k1<0>( q, data_g);
+      derives_calc_ytep_k2<1>( q, data_g);
+      derives_calc_ytep_k3<2>( q, data_g);
+      derives_calc_ytep_k4<3>( q, data_g);
 
-      PipeConvert_1_3<4, 3, 8>(q, total_itr_24);
+
+      derives_calc_ytep_k1<4>( q, data_g);
+      derives_calc_ytep_k2<5>( q, data_g);
+      derives_calc_ytep_k3<6>( q, data_g);
+      derives_calc_ytep_k4<7>( q, data_g);
+
+      PipeConvert_1_3<8, 3, 8>(q, total_itr_24);
       stencil_write<3,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48, kernel_time);
       q.wait();
 
@@ -347,12 +364,17 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
       // stencil_read<1,16>(q, in_buf2, total_itr_32);
       PipeConvert_3_1<0,0, 8>(q, total_itr_24);
 
-      derives_calc_ytep_k1( q, data_g);
-      derives_calc_ytep_k2( q, data_g);
-      derives_calc_ytep_k3( q, data_g);
-      derives_calc_ytep_k4( q, data_g);
+      derives_calc_ytep_k1<0>( q, data_g);
+      derives_calc_ytep_k2<1>( q, data_g);
+      derives_calc_ytep_k3<2>( q, data_g);
+      derives_calc_ytep_k4<3>( q, data_g);
 
-      PipeConvert_1_3<4,3, 8>(q, total_itr_24);
+      derives_calc_ytep_k1<4>( q, data_g);
+      derives_calc_ytep_k2<5>( q, data_g);
+      derives_calc_ytep_k3<6>( q, data_g);
+      derives_calc_ytep_k4<7>( q, data_g);
+
+      PipeConvert_1_3<8,3, 8>(q, total_itr_24);
       stencil_write<3,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48, kernel_time);
 
       q.wait();
@@ -457,7 +479,7 @@ int main(int argc, char* argv[]) {
 
   float dt = 0.1;
   for(int i = 0; i < batch; i++){
-    for(int itr = 0; itr < 2*n_iter; itr++){
+    for(int itr = 0; itr < 4*n_iter; itr++){
        fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
        calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
 

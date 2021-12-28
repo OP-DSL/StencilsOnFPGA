@@ -1,9 +1,9 @@
 
-
+template <int pidx>
 static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 	
 	event e1 = q.submit([&](handler &h) {
-    h.single_task<class derives_calc_ytep_k1>([=] () [[intel::kernel_args_restrict]]{
+    h.single_task<class struct_idX<pidx>>([=] () [[intel::kernel_args_restrict]]{
 
     	
 
@@ -28,6 +28,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 		struct dPath window_z_p_3[plane_buff_size];
 		struct dPath window_z_p_4[plane_buff_size];
 
+		
 		struct dPath window_y_p_1[line_buff_size];
 		struct dPath window_y_p_2[line_buff_size];
 		struct dPath window_y_p_3[line_buff_size];
@@ -83,6 +84,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 		unsigned short i_dum = 0, j_dum = 0, k_dum = 0;
 		unsigned short j_p_dum = 0, j_l_dum = 0, j_p_diff_dum = 0, j_l_diff_dum = 0;
 		unsigned short j_p, j_l, j_p_diff, j_l_diff;
+		
 		[[intel::initiation_interval(1)]]
 		for(unsigned int itr = 0; itr < gridsize; itr++) {
 			#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
@@ -147,13 +149,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 
 			// negetive to positive x arm
 
-			// here you have reduce the bus width
-			// s_0_4_4 = s_1_4_4;
-			
-
-			// s_1_4_4 = s_2_4_4;
-			// s_2_4_4 = s_3_4_4;
-			// s_3_4_4 = s_4_4_4;
+		
 			s_2_4_4 = s_3_4_4;
 			window_y_n_1[j_l_diff] = s_2_4_4;
 			s_3_4_4 = s_4_4_4;
@@ -192,7 +188,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 
 			bool cond_tmp1 = (i < grid_sizez);
 			if(cond_tmp1){
-				s_4_4_8 = pipeM::PipeAt<0>::read(); // set
+				s_4_4_8 = pipeM::PipeAt<pidx>::read(); // set
 			}
 			window_z_p_4[j_p] = s_4_4_8; // set
 
@@ -286,6 +282,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 			struct dPath y_tmp_vec;
 			struct dPath y_final_vec;
 
+			#pragma unroll 3
 			for(int v = 0; v < 3; v++){
 
 			  	float sigma = s_4_4_4.data[1+v*8]/s_4_4_4.data[0+v*8];  //mu[OPS_ACC5(0,0,0)]/rho[OPS_ACC4(0,0,0)];
@@ -490,6 +487,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 		  		bool change_cond2 = (idy >= sizey ) || (idz < 0) || (idz >= sizez);
 		  		bool change_cond = change_cond1 || change_cond2;
 
+		  		#pragma unroll 8
 		  		for(int ptr = v*8; ptr < (v+1)*8; ptr++){
 					update_j.data[ptr] = change_cond ? s_4_4_4.data[ptr] : y_tmp_vec.data[ptr];
 					yy_final_out.data[ptr] = change_cond ? s_4_4_4.data[ptr] : y_final_vec.data[ptr];
@@ -499,9 +497,9 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g){
 
 			bool cond_wr = (i >= ORDER) && ( i < grid_sizez + ORDER);
 			if(cond_wr ) {
-				pipeM::PipeAt<1>::write(update_j);
-				pipeM::PipeAt<11>::write(s_4_4_4);
-				pipeM::PipeAt<21>::write(yy_final_out);
+				pipeM::PipeAt<pidx+1>::write(update_j);
+				pipeM::PipeAt<pidx+11>::write(s_4_4_4);
+				pipeM::PipeAt<pidx+21>::write(yy_final_out);
 			}
 
 			// move the cell block

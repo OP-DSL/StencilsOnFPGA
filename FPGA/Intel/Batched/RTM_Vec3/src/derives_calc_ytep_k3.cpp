@@ -1,10 +1,10 @@
 
 
-
+template <int pidx>
 static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 	
 	event e1 = q.submit([&](handler &h) {
-    h.single_task<class derives_calc_ytep_k3>([=] () [[intel::kernel_args_restrict]]{
+    h.single_task<class struct_idX<pidx>>([=] () [[intel::kernel_args_restrict]]{
 
 		unsigned short grid_sizex = data_g.grid_sizex;
 		unsigned short xblocks = data_g.xblocks;
@@ -40,8 +40,10 @@ static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 		struct dPath window_z_n_3[plane_buff_size];
 		struct dPath window_z_n_4[plane_buff_size];
 
-		struct dPath window_yy[4*plane_buff_size];
-		struct dPath window_yy_final[4*plane_buff_size];
+		struct dPath16 window_yy_16[4*plane_buff_size];
+		struct dPath2 window_yy_2[4*plane_buff_size];
+		struct dPath16 window_yy_final_16[4*plane_buff_size];
+		struct dPath2 window_yy_final_2[4*plane_buff_size];
 
 
 
@@ -52,8 +54,8 @@ static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 		struct dPath s_3_4_4, s_2_4_4, s_1_4_4, s_0_4_4;
 		struct dPath s_4_3_4, s_4_2_4, s_4_1_4, s_4_0_4;
 		struct dPath s_4_4_3, s_4_4_2, s_4_4_1, s_4_4_0;
-		struct dPath yy_vec, yy_vec_tmp;
-		struct dPath yy_final_vec, yy_final_vec_tmp, yy_final_vec_write;
+		struct dPath yy_vec_tmp;
+		struct dPath yy_final_vec_tmp, yy_final_vec_write;
 		struct dPath update_j;
 
 
@@ -187,27 +189,64 @@ static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 			s_4_4_7 = window_z_p_4[j_p];   //set
 			window_z_p_3[j_p] = s_4_4_7;   //set	
 
+
 			bool cond_tmp1 = (i < grid_sizez);
 			if(cond_tmp1){
-				s_4_4_8 = pipeM::PipeAt<2>::read(); // set
+				s_4_4_8 = pipeM::PipeAt<pidx>::read(); // set
 			}
 			window_z_p_4[j_p] = s_4_4_8; // set
 
 
 
-			yy_vec = window_yy[j_p_4];
+
+			struct dPath16 yy_vec16 = window_yy_16[j_p_4];
+			struct dPath2 yy_vec2 = window_yy_2[j_p_4];
+			struct dPath yy_vec = {{s_4_4_4.data[0], s_4_4_4.data[1], yy_vec2.data[0], yy_vec2.data[1], yy_vec16.data[0], yy_vec16.data[1], yy_vec16.data[2], yy_vec16.data[3], \
+									s_4_4_4.data[8], s_4_4_4.data[9], yy_vec16.data[4], yy_vec16.data[5], yy_vec16.data[6], yy_vec16.data[7], yy_vec16.data[8], yy_vec16.data[9], \
+									s_4_4_4.data[16], s_4_4_4.data[17], yy_vec16.data[10], yy_vec16.data[11], yy_vec16.data[12], yy_vec16.data[13], yy_vec16.data[14], yy_vec16.data[15]}};
+
+
 			bool cond_tmp2 = (i < grid_sizez);
 			if(cond_tmp1){
-				yy_vec_tmp = pipeM::PipeAt<12>::read(); // set
+				yy_vec_tmp = pipeM::PipeAt<pidx+10>::read(); // set
 			}
-			window_yy[j_p_4] = yy_vec_tmp;
+
+			struct dPath2 yy_vec_tmp2 = {{yy_vec_tmp.data[2], yy_vec_tmp.data[3]}};
+			struct dPath16 yy_vec_tmp16 = {{yy_vec_tmp.data[4], yy_vec_tmp.data[5], yy_vec_tmp.data[6], yy_vec_tmp.data[7], \
+											yy_vec_tmp.data[10], yy_vec_tmp.data[11], yy_vec_tmp.data[12], yy_vec_tmp.data[13], yy_vec_tmp.data[14], yy_vec_tmp.data[15], \
+											yy_vec_tmp.data[18], yy_vec_tmp.data[19], yy_vec_tmp.data[20], yy_vec_tmp.data[21], yy_vec_tmp.data[22], yy_vec_tmp.data[23]}};
+
+			window_yy_2[j_p_4] = yy_vec_tmp2;
+			window_yy_16[j_p_4] = yy_vec_tmp16;
 
 
-			yy_final_vec = window_yy_final[j_p_4];
+
+
+
+
+			struct dPath2 yy_final_vec2 = window_yy_final_2[j_p_4];
+			struct dPath16 yy_final_vec16 = window_yy_final_16[j_p_4];
+			struct dPath yy_final_vec = {{s_4_4_4.data[0], s_4_4_4.data[1], yy_final_vec2.data[0], yy_final_vec2.data[1], yy_final_vec16.data[0], yy_final_vec16.data[1], yy_final_vec16.data[2], yy_final_vec16.data[3], \
+										  s_4_4_4.data[8], s_4_4_4.data[9], yy_final_vec16.data[4], yy_final_vec16.data[5], yy_final_vec16.data[6], yy_final_vec16.data[7], yy_final_vec16.data[8], yy_final_vec16.data[9], \
+										  s_4_4_4.data[16], s_4_4_4.data[17], yy_final_vec16.data[10], yy_final_vec16.data[11], yy_final_vec16.data[12], yy_final_vec16.data[13], yy_final_vec16.data[14], yy_final_vec16.data[15]}};
 			if(cond_tmp1){
-				yy_final_vec_tmp = pipeM::PipeAt<22>::read(); // set
+				yy_final_vec_tmp = pipeM::PipeAt<pidx+20>::read(); // set
 			}
-			window_yy_final[j_p_4] = yy_final_vec_tmp;
+
+			struct dPath2 yy_final_vec_tmp2 = {{yy_final_vec_tmp.data[2], yy_final_vec_tmp.data[3]}};
+			struct dPath16 yy_final_vec_tmp16 = {{yy_final_vec_tmp.data[4], yy_final_vec_tmp.data[5], yy_final_vec_tmp.data[6], yy_final_vec_tmp.data[7], \
+												  yy_final_vec_tmp.data[10], yy_final_vec_tmp.data[11], yy_final_vec_tmp.data[12], yy_final_vec_tmp.data[13], yy_final_vec_tmp.data[14], yy_final_vec_tmp.data[15], \
+												  yy_final_vec_tmp.data[18], yy_final_vec_tmp.data[19], yy_final_vec_tmp.data[20], yy_final_vec_tmp.data[21], yy_final_vec_tmp.data[22], yy_final_vec_tmp.data[23]}};
+
+			window_yy_final_2[j_p_4] = yy_final_vec_tmp2;
+			window_yy_final_16[j_p_4] = yy_final_vec_tmp16;
+
+
+
+
+
+
+
 
 
 			if(j_p >= plane_size-1){
@@ -304,6 +343,7 @@ static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 			struct dPath y_final_vec;
 			struct dPath yyTmp_vec;
 
+			#pragma unroll 3
 			for(int v = 0; v < 3; v++){
 
 			  	float sigma = s_4_4_4.data[1+v*8]/s_4_4_4.data[0+v*8]; 
@@ -505,6 +545,7 @@ static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 
 		  		bool change_cond = change_cond1 || change_cond2;
 
+		  		#pragma unroll 8
 		  		for(int ptr = v*8; ptr < (v+1)*8; ptr++){
 					update_j.data[ptr] = change_cond ? s_4_4_4.data[ptr]: yyTmp_vec.data[ptr];
 					yy_final_vec_write.data[ptr] = change_cond ? s_4_4_4.data[ptr]: yy_final_vec.data[ptr];
@@ -516,9 +557,9 @@ static void derives_calc_ytep_k3( queue &q, struct data_G data_g){
 
 			bool cond_wr = (i >= ORDER) && ( i < grid_sizez + ORDER);
 			if(cond_wr ) {
-				pipeM::PipeAt<3>::write(update_j);
-				pipeM::PipeAt<13>::write(yy_vec);
-				pipeM::PipeAt<23>::write(yy_final_vec_write);
+				pipeM::PipeAt<pidx+1>::write(update_j);
+				pipeM::PipeAt<pidx+11>::write(yy_vec);
+				pipeM::PipeAt<pidx+21>::write(yy_final_vec_write);
 			}
 
 			// move the cell block
