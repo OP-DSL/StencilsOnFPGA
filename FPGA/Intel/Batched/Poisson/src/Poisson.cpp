@@ -428,10 +428,10 @@ int main(int argc, char* argv[]) {
   in_vec.resize(nx/v_factor*ny*nz+delay);
   in_vec_h.resize(nx*ny*nz);
   out_sequential.resize(nx*ny*nz);
-  out_parallel.resize(nx/v_factor*ny*nz+delay);
+  out_parallel.resize(nx/v_factor*ny*nz+delay*2);
 
   // Initialize input vectors with values from 0 to vector_size - 1
-  InitializeVector<v_factor>(in_vec, delay);
+  InitializeVector<v_factor>(in_vec, delay*2);
   InitializeVectorS(in_vec_h);
   try {
     queue q(d_selector,  dpc_common::exception_handler, property::queue::enable_profiling{});
