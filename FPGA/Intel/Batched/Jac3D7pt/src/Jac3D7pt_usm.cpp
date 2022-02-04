@@ -46,7 +46,7 @@ struct dPath16 {
 using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 8>;
 using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 8>;
 
-#define UFACTOR 2
+#define UFACTOR 55
 
 struct pipeS{
   pipeS() = delete;
