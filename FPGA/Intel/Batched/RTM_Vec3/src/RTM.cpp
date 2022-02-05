@@ -74,7 +74,7 @@ struct pipeS{
 
   template <size_t idx>
   struct Pipes1{
-    using pipeA = INTEL::pipe<struct_idS<idx>, dPath16, 8>;
+    using pipeA = INTEL::pipe<struct_idS<idx>, dPath16, 1024>;
   };
 
   template <size_t idx>
@@ -124,43 +124,85 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 #include "derives_calc_ytep_k3.cpp"
 #include "derives_calc_ytep_k4.cpp"
 
-template<int idx, int VFACTOR>
-void stencil_read(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<struct dPath16, 1> &in_buf2, buffer<struct dPath16, 1> &in_buf3, int total_itr){
+template<int idx1, int idx2, int VFACTOR>
+event stencil_read_write(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<struct dPath16, 1> &in_buf2, buffer<struct dPath16, 1> &in_buf3, 
+  buffer<struct dPath16, 1> &out_buf1, buffer<struct dPath16, 1> &out_buf2, buffer<struct dPath16, 1> &out_buf3, 
+  int total_itr, ac_int<12,true> n_iter, int delay
+  ){
       event e1 = q.submit([&](handler &h) {
-      // cl::sycl::stream out(1024, 256, h);
-      accessor in1(in_buf1, h, read_only);
-      accessor in2(in_buf2, h, read_only);
-      accessor in3(in_buf3, h, read_only);
+
+      accessor in1(in_buf1, h);
+      accessor in2(in_buf2, h);
+      accessor in3(in_buf3, h);
+
+      accessor out1(out_buf1, h);
+      accessor out2(out_buf2, h);
+      accessor out3(out_buf3, h);
+
       h.single_task<class stencil_read>([=] () [[intel::kernel_args_restrict]]{
 
-        [[intel::initiation_interval(1)]]
-        for(int i = 0; i < total_itr; i++){
-          struct dPath16 vec1 = in1[i];
-          struct dPath16 vec2 = in2[i];
-          struct dPath16 vec3 = in3[i];
+      [[intel::disable_loop_pipelining]]
+      for(ac_int<12,true> itr = 0; itr < n_iter; itr++){
 
-          pipeS::PipeAt<idx>::write(vec1);
-          pipeS::PipeAt<idx+1>::write(vec2);
-          pipeS::PipeAt<idx+2>::write(vec3);
+        accessor ptrR1 = ((itr & 1) == 0) ? in1 : out1;
+        accessor ptrR2 = ((itr & 1) == 0) ? in2 : out2;
+        accessor ptrR3 = ((itr & 1) == 0) ? in3 : out3;
+
+
+        accessor ptrW1 = ((itr & 1) == 1) ? in1 : out1;
+        accessor ptrW2 = ((itr & 1) == 1) ? in2 : out2;
+        accessor ptrW3 = ((itr & 1) == 1) ? in3 : out3;
+
+        [[intel::initiation_interval(1)]]
+        for(int i = 0; i < total_itr+delay; i++){
+
+          struct dPath16 vecR1 = ptrR1[i+delay];
+          struct dPath16 vecR2 = ptrR2[i+delay];
+          struct dPath16 vecR3 = ptrR3[i+delay];
+
+          if(i < total_itr){
+            pipeS::PipeAt<idx1>::write(vecR1);
+            pipeS::PipeAt<idx1+1>::write(vecR2);
+            pipeS::PipeAt<idx1+2>::write(vecR3);
+          }
+
+          struct dPath16 vecW1;
+          struct dPath16 vecW2;
+          struct dPath16 vecW3;
+
+
+          if(i >= delay){
+
+            vecW1 = pipeS::PipeAt<idx2>::read();
+            vecW2 = pipeS::PipeAt<idx2+1>::read();
+            vecW3 = pipeS::PipeAt<idx2+2>::read();
+
+          }
+
+          ptrW1[i] = vecW1;
+          ptrW2[i] = vecW2;
+          ptrW3[i] = vecW3;
+
         }
-        // out << "Finished reading the data\n";
-        
+      }        
       });
       });
+
+      return e1;
 }
 
 
 
 
 template<int idx1, int idx2, int VFACTOR>
-void PipeConvert_3_1(queue &q, int total_itr){
+void PipeConvert_3_1(queue &q, int total_itr, ac_int<12,true> n_iter){
       event e1 = q.submit([&](handler &h) {
 
-      // int total_itr = ((nx*ny)*(nz))/(VFACTOR);
+      ac_int<40,true> count = total_itr * n_iter;
       h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
         struct dPath16 data1, data2, data3;
         [[intel::initiation_interval(1)]]
-        for(int i = 0; i < total_itr; i++){
+        for(int i = 0; i < count; i++){
           
           struct dPath out;
           if((i & 1) == 0){
@@ -194,14 +236,14 @@ void PipeConvert_3_1(queue &q, int total_itr){
 
 
 template <int idx1, int idx2, int VFACTOR>
-void PipeConvert_1_3(queue &q, int total_itr){
+void PipeConvert_1_3(queue &q, int total_itr,  ac_int<12,true> n_iter){
     event e3 = q.submit([&](handler &h) {
-    // accessor out(out_buf, h, write_only);
+
+    ac_int<40,true> count = total_itr * n_iter;
     h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
-      // int total_itr = ((nx*ny)*(nz))/(VFACTOR);
       struct dPath out1, out2, out;
       [[intel::initiation_interval(1)]]
-      for(int i = 0; i < total_itr; i++){
+      for(int i = 0; i < count; i++){
           
           out = pipeM::PipeAt<idx1>::read();
 
@@ -238,33 +280,33 @@ void PipeConvert_1_3(queue &q, int total_itr){
     });
 }
 
-template <int idx, int VFACTOR>
-void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf1, buffer<struct dPath16, 1> &out_buf2, buffer<struct dPath16, 1> &out_buf3, 
-  int total_itr, double &kernel_time){
-    event e3 = q.submit([&](handler &h) {
-    accessor out1(out_buf1, h, write_only);
-    accessor out2(out_buf2, h, write_only);
-    accessor out3(out_buf3, h, write_only);
-    std::string instance_name="consumer";
-    h.single_task<class stencil_write>([=] () [[intel::kernel_args_restrict]]{
-      // int total_itr = ((nx*ny)*(nz))/VFACTOR;
-      [[intel::initiation_interval(1)]]
-      for(int i = 0; i < total_itr; i++){
-        struct dPath16 vec1 = pipeS::PipeAt<idx>::read();
-        struct dPath16 vec2 = pipeS::PipeAt<idx+1>::read();
-        struct dPath16 vec3 = pipeS::PipeAt<idx+2>::read();
-        out1[i] = vec1;
-        out2[i] = vec2;
-        out3[i] = vec3;
-      }
+// template <int idx, int VFACTOR>
+// void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf1, buffer<struct dPath16, 1> &out_buf2, buffer<struct dPath16, 1> &out_buf3, 
+//   int total_itr, double &kernel_time){
+//     event e3 = q.submit([&](handler &h) {
+//     accessor out1(out_buf1, h, write_only);
+//     accessor out2(out_buf2, h, write_only);
+//     accessor out3(out_buf3, h, write_only);
+//     std::string instance_name="consumer";
+//     h.single_task<class stencil_write>([=] () [[intel::kernel_args_restrict]]{
+//       // int total_itr = ((nx*ny)*(nz))/VFACTOR;
+//       [[intel::initiation_interval(1)]]
+//       for(int i = 0; i < total_itr; i++){
+//         struct dPath16 vec1 = pipeS::PipeAt<idx>::read();
+//         struct dPath16 vec2 = pipeS::PipeAt<idx+1>::read();
+//         struct dPath16 vec3 = pipeS::PipeAt<idx+2>::read();
+//         out1[i] = vec1;
+//         out2[i] = vec2;
+//         out3[i] = vec3;
+//       }
       
-    });
-    });
+//     });
+//     });
 
-    double start0 = e3.get_profiling_info<info::event_profiling::command_start>();
-    double end0 = e3.get_profiling_info<info::event_profiling::command_end>(); 
-    kernel_time += (end0-start0)*1e-9;
-}
+//     double start0 = e3.get_profiling_info<info::event_profiling::command_start>();
+//     double end0 = e3.get_profiling_info<info::event_profiling::command_end>(); 
+//     kernel_time += (end0-start0)*1e-9;
+// }
 
 
 // template <int N, int n> struct loop {
@@ -289,7 +331,7 @@ void stencil_write(queue &q, buffer<struct dPath16, 1> &out_buf1, buffer<struct 
 //************************************
 void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &input2, IntVector &output2,
    IntVector &input3, IntVector &output3,
-   int n_iter, int nx, int ny, int nz, int batch) {
+   int n_iter, int nx, int ny, int nz, int batch, int delay) {
   // Create the range object for the vectors managed by the buffer.
   range<1> num_items{input1.size()};
   int vec_size = input1.size()*3;
@@ -340,44 +382,49 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
     for(int itr = 0; itr < n_iter; itr++){
 
     // reading from memory
-      stencil_read<0,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48);
-      PipeConvert_3_1<0,0, 8>(q, total_itr_24);
+      event e = stencil_read_write<0,3,16>(q, in_buf1, in_buf2, in_buf3, out_buf1, out_buf2, out_buf3, total_itr_48, n_iter, delay);
+      PipeConvert_3_1<0,0, 8>(q, total_itr_24, n_iter);
 
-      derives_calc_ytep_k1<0>( q, data_g);
-      derives_calc_ytep_k2<1>( q, data_g);
-      derives_calc_ytep_k3<2>( q, data_g);
-      derives_calc_ytep_k4<3>( q, data_g);
+      derives_calc_ytep_k1<0>( q, data_g, n_iter);
+      derives_calc_ytep_k2<1>( q, data_g, n_iter);
+      derives_calc_ytep_k3<2>( q, data_g, n_iter);
+      derives_calc_ytep_k4<3>( q, data_g, n_iter);
 
 
-      derives_calc_ytep_k1<4>( q, data_g);
-      derives_calc_ytep_k2<5>( q, data_g);
-      derives_calc_ytep_k3<6>( q, data_g);
-      derives_calc_ytep_k4<7>( q, data_g);
+      derives_calc_ytep_k1<4>( q, data_g, n_iter);
+      derives_calc_ytep_k2<5>( q, data_g, n_iter);
+      derives_calc_ytep_k3<6>( q, data_g, n_iter);
+      derives_calc_ytep_k4<7>( q, data_g, n_iter);
 
-      PipeConvert_1_3<8, 3, 8>(q, total_itr_24);
-      stencil_write<3,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48, kernel_time);
+      PipeConvert_1_3<8, 3, 8>(q, total_itr_24, n_iter);
+      // stencil_write<3,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48, kernel_time);
       q.wait();
+
+
+      double start0 = e.get_profiling_info<info::event_profiling::command_start>();
+      double end0 = e.get_profiling_info<info::event_profiling::command_end>(); 
+      kernel_time += (end0-start0)*1e-9;
 
       
-      // // // // reading from memory
-      stencil_read<0,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48);
-      // stencil_read<1,16>(q, in_buf2, total_itr_32);
-      PipeConvert_3_1<0,0, 8>(q, total_itr_24);
+      // // // // // reading from memory
+      // stencil_read<0,16>(q, out_buf1, out_buf2, out_buf3, total_itr_48);
+      // // stencil_read<1,16>(q, in_buf2, total_itr_32);
+      // PipeConvert_3_1<0,0, 8>(q, total_itr_24);
 
-      derives_calc_ytep_k1<0>( q, data_g);
-      derives_calc_ytep_k2<1>( q, data_g);
-      derives_calc_ytep_k3<2>( q, data_g);
-      derives_calc_ytep_k4<3>( q, data_g);
+      // derives_calc_ytep_k1<0>( q, data_g);
+      // derives_calc_ytep_k2<1>( q, data_g);
+      // derives_calc_ytep_k3<2>( q, data_g);
+      // derives_calc_ytep_k4<3>( q, data_g);
 
-      derives_calc_ytep_k1<4>( q, data_g);
-      derives_calc_ytep_k2<5>( q, data_g);
-      derives_calc_ytep_k3<6>( q, data_g);
-      derives_calc_ytep_k4<7>( q, data_g);
+      // derives_calc_ytep_k1<4>( q, data_g);
+      // derives_calc_ytep_k2<5>( q, data_g);
+      // derives_calc_ytep_k3<6>( q, data_g);
+      // derives_calc_ytep_k4<7>( q, data_g);
 
-      PipeConvert_1_3<8,3, 8>(q, total_itr_24);
-      stencil_write<3,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48, kernel_time);
+      // PipeConvert_1_3<8,3, 8>(q, total_itr_24);
+      // stencil_write<3,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48, kernel_time);
 
-      q.wait();
+      // q.wait();
     }
 
     std::cout << "fimished reading from the pipe\n" << std::endl;
@@ -460,13 +507,14 @@ int main(int argc, char* argv[]) {
   IntVector grid_yy_rho_mu_d3, grid_yy_rho_mu_temp_d3;
 
   const int DDR_width = 16;
+  int delay = 4*grid_d.grid_size_x/(DDR_width*3)*grid_d.grid_size_y+ 1000;
 
-  grid_yy_rho_mu_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
-  grid_yy_rho_mu_temp_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
-  grid_yy_rho_mu_d2.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
-  grid_yy_rho_mu_temp_d2.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
-  grid_yy_rho_mu_d3.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
-  grid_yy_rho_mu_temp_d3.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3));
+  grid_yy_rho_mu_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
+  grid_yy_rho_mu_temp_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
+  grid_yy_rho_mu_d2.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
+  grid_yy_rho_mu_temp_d2.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
+  grid_yy_rho_mu_d3.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
+  grid_yy_rho_mu_temp_d3.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
 
 
   // printf("grid_d.data_size_bytes_dim8:%d\n", grid_d.data_size_bytes_dim8);
@@ -474,7 +522,7 @@ int main(int argc, char* argv[]) {
   for(int i = 0; i < batch; i++){
     populate_rho_mu_yy(&grid_yy_rho_mu[grid_d.dims * i], grid_d);
   }
-  copy_ToVec(grid_yy_rho_mu, grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, grid_d.data_size_bytes_dim8);
+  copy_ToVec(grid_yy_rho_mu, grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, grid_d.data_size_bytes_dim8, delay);
 
 
   float dt = 0.1;
@@ -522,14 +570,14 @@ int main(int argc, char* argv[]) {
     // Vector addition in DPC++
     
     stencil_comp(q, grid_yy_rho_mu_d1, grid_yy_rho_mu_temp_d1,  grid_yy_rho_mu_d2, grid_yy_rho_mu_temp_d2,  grid_yy_rho_mu_d3, grid_yy_rho_mu_temp_d3,
-     n_iter, nx, ny, nz, batch);
+     n_iter*2, nx, ny, nz, batch, delay);
 
   } catch (exception const &e) {
     std::cout << "An exception is caught for vector add.\n";
     std::terminate();
   }
 
-  copy_FromVec(grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, temp,  grid_d.data_size_bytes_dim8);
+  copy_FromVec(grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, temp,  grid_d.data_size_bytes_dim8, delay);
   // for(int i = 0; i < grid_d.data_size_bytes_dim8/4; i++){
   //   float chk = fabs((grid_yy_rho_mu[i] - temp[i])/(grid_yy_rho_mu[i]));
   //   // std::cout << "i: " << i << " " << grid_yy_rho_mu_temp[i] << " " << temp[i] << " ";
