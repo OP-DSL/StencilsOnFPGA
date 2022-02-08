@@ -47,13 +47,13 @@ size_t vector_size = 10000;
 typedef std::vector<struct dPath16> IntVector; 
 typedef std::vector<float> IntVectorS; 
 
-using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 512>;
-using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 512>;
+using rd_pipe = INTEL::pipe<class pVec16_r, dPath16, 1024>;
+using wr_pipe = INTEL::pipe<class pVec16_w, dPath16, 1024>;
 
 
 using OptLSU = ext::intel::lsu<ext::intel::burst_coalesce<true>>;
 
-#define UFACTOR 2
+#define UFACTOR 60
 
 struct pipeS{
   pipeS() = delete;
@@ -95,14 +95,15 @@ static auto exception_handler = [](sycl::exception_list e_list) {
 template<int VFACTOR>
 event stencil_read_write(queue &q, buffer<struct dPath16, 1> &in_buf, buffer<struct dPath16, 1> &out_buf, 
                         ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch , ac_int<12,true> n_iter, int delay){
+     
+      int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
       event e1 = q.submit([&](handler &h) {
       accessor in(in_buf, h);
       accessor out(out_buf, h);
 
-      int total_itr = ((nx*ny)*(nz*batch))/VFACTOR;
-
       h.single_task<class producer>([=] () [[intel::kernel_args_restrict]]{
 
+      [[intel::disable_loop_pipelining]]
       for(ac_int<12,true> itr = 0; itr < n_iter; itr++){
 
         accessor ptrR = ((itr & 1) == 0) ? in : out;
@@ -132,9 +133,8 @@ event stencil_read_write(queue &q, buffer<struct dPath16, 1> &in_buf, buffer<str
 
 template<int VFACTOR>
 void PipeConvert_512_256(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch, ac_int<12,true> n_iter){
-      event e1 = q.submit([&](handler &h) {
-
       ac_int<40,true> total_itr = ((nx*ny)*(nz*batch))/(VFACTOR)*n_iter;
+      event e1 = q.submit([&](handler &h) {
       h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
         struct dPath16 data16;
         [[intel::initiation_interval(1)]]
@@ -162,14 +162,20 @@ void PipeConvert_512_256(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_in
 template <size_t idx>  struct struct_idX;
 template<int idx, int IdX, int DMAX, int VFACTOR> 
 void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz, ac_int<12,true> batch, ac_int<12,true> n_iter){
+
+    int total_itr = ((nx/VFACTOR)*ny*(batch*nz+1));
     event e2 = q.submit([&](handler &h) {
 
     std::string instance_name="compute"+std::to_string(idx);
     h.single_task<class struct_idX<IdX>>([=] () [[intel::kernel_args_restrict]]{
-    int total_itr = ((nx/VFACTOR)*ny*(batch*nz+1));
+   
 
     const int max_dpethl = DMAX/VFACTOR;
     const int max_dpethP = DMAX*DMAX/VFACTOR;
+
+
+    [[intel::disable_loop_pipelining]]
+    for(ac_int<12,true> u_itr = 0; u_itr < n_iter; u_itr++){
 
     struct dPath s_1_1_2, s_1_2_1, s_1_1_1, s_1_1_1_b, s_1_1_1_f, s_1_0_1, s_1_1_0;
 
@@ -180,7 +186,7 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
 
 
 
-    for(ac_int<12,true> itr = 0; itr < n_iter; itr++){
+    
 
       struct dPath vec_wr;
       [[intel::fpga_register]] float mid_row[VFACTOR+2];
@@ -303,10 +309,12 @@ void stencil_compute(queue &q,  ac_int<12,true> nx, ac_int<12,true> ny, ac_int<1
 template <int idx, int VFACTOR>
 void PipeConvert_256_512(queue &q, ac_int<12,true> nx, ac_int<12,true> ny, ac_int<12,true> nz,
                   ac_int<12,true> batch, ac_int<12,true> n_iter){
+
+    ac_int<40,true> total_itr = ((nx*ny)*(nz*batch))/(VFACTOR)*n_iter;
     event e3 = q.submit([&](handler &h) {
     // accessor out(out_buf, h, write_only);
     h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
-      ac_int<40,true> total_itr = ((nx*ny)*(nz*batch))/(VFACTOR)*n_iter;
+      
       struct dPath16 data16;
       [[intel::initiation_interval(1)]]
       for(ac_int<40,true> i = 0; i < total_itr; i++){
@@ -494,7 +502,7 @@ int main(int argc, char* argv[]) {
 #endif
 
   // Create vector objects with "vector_size" to store the input and output data.
-  int delay = (nx*ny)/v_factor*UFACTOR+500;
+  int delay = (nx*ny)/v_factor*UFACTOR+811 + (39*UFACTOR)/2 + (4+8)/2;
 
   IntVector in_vec, out_parallel;
   IntVectorS in_vec_h, out_sequential;
