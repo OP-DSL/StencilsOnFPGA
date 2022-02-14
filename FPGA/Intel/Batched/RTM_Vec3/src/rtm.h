@@ -72,7 +72,7 @@ const int max_depth_16 = MAX_DEPTH_16 * 8;
 const int max_depth_8 = MAX_DEPTH_16 * 8;
 
 const int plane_buff_size = ((48+2)/3)*48;
-const int line_buff_size = 48;
+const int line_buff_size = (48+2)/3;
 
 
 typedef union  {

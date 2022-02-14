@@ -1,22 +1,23 @@
 template <int pidx>
 static void derives_calc_ytep_k2( queue &q, struct data_G data_g,    ac_int<12,true> n_iter){
 	
+
+	unsigned short grid_sizex = data_g.grid_sizex;
+	unsigned short xblocks = data_g.xblocks;
+	unsigned short sizex = data_g.sizex;
+	unsigned short sizey = data_g.sizey;
+	unsigned short sizez = data_g.sizez;
+	unsigned short limit_z = data_g.limit_z;
+	unsigned short grid_sizey = data_g.grid_sizey;
+	unsigned short grid_sizez = data_g.grid_sizez;
+	unsigned int line_diff = data_g.line_diff;
+	unsigned int plane_diff = data_g.plane_diff;
+	unsigned int plane_size = data_g.plane_size;
+	unsigned int gridsize = data_g.gridsize_pr;
+
+	
 	event e1 = q.submit([&](handler &h) {
     h.single_task<class struct_idX<pidx>>([=] () [[intel::kernel_args_restrict]]{
-
-
-		unsigned short grid_sizex = data_g.grid_sizex;
-		unsigned short xblocks = data_g.xblocks;
-		unsigned short sizex = data_g.sizex;
-		unsigned short sizey = data_g.sizey;
-		unsigned short sizez = data_g.sizez;
-		unsigned short limit_z = data_g.limit_z;
-		unsigned short grid_sizey = data_g.grid_sizey;
-		unsigned short grid_sizez = data_g.grid_sizez;
-		unsigned int line_diff = data_g.line_diff;
-		unsigned int plane_diff = data_g.plane_diff;
-		unsigned int plane_size = data_g.plane_size;
-		unsigned int gridsize = data_g.gridsize_pr;
 
 
 		[[intel::disable_loop_pipelining]]

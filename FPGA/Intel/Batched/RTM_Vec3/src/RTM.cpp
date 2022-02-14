@@ -153,6 +153,7 @@ event stencil_read_write(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<st
         accessor ptrW2 = ((itr & 1) == 1) ? in2 : out2;
         accessor ptrW3 = ((itr & 1) == 1) ? in3 : out3;
 
+        [[intel::ivdep]]
         [[intel::initiation_interval(1)]]
         for(int i = 0; i < total_itr+delay; i++){
 
@@ -196,9 +197,10 @@ event stencil_read_write(queue &q, buffer<struct dPath16, 1> &in_buf1, buffer<st
 
 template<int idx1, int idx2, int VFACTOR>
 void PipeConvert_3_1(queue &q, int total_itr, ac_int<12,true> n_iter){
-      event e1 = q.submit([&](handler &h) {
 
       ac_int<40,true> count = total_itr * n_iter;
+      event e1 = q.submit([&](handler &h) {
+
       h.single_task<class PipeConvert_512_256>([=] () [[intel::kernel_args_restrict]]{
         struct dPath16 data1, data2, data3;
         [[intel::initiation_interval(1)]]
@@ -237,9 +239,8 @@ void PipeConvert_3_1(queue &q, int total_itr, ac_int<12,true> n_iter){
 
 template <int idx1, int idx2, int VFACTOR>
 void PipeConvert_1_3(queue &q, int total_itr,  ac_int<12,true> n_iter){
-    event e3 = q.submit([&](handler &h) {
-
     ac_int<40,true> count = total_itr * n_iter;
+    event e3 = q.submit([&](handler &h) {
     h.single_task<class pipeConvert_256_512>([=] () [[intel::kernel_args_restrict]]{
       struct dPath out1, out2, out;
       [[intel::initiation_interval(1)]]
@@ -379,7 +380,7 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
   unsigned int total_itr_48 = totol_8/2;
   unsigned int total_itr_24 = totol_8;
 
-    for(int itr = 0; itr < n_iter; itr++){
+    // for(int itr = 0; itr < n_iter; itr++){
 
     // reading from memory
       event e = stencil_read_write<0,3,16>(q, in_buf1, in_buf2, in_buf3, out_buf1, out_buf2, out_buf3, total_itr_48, n_iter, delay);
@@ -425,12 +426,12 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
       // stencil_write<3,16>(q, in_buf1, in_buf2, in_buf3, total_itr_48, kernel_time);
 
       // q.wait();
-    }
+    // }
 
     std::cout << "fimished reading from the pipe\n" << std::endl;
 
     double exe_elapsed = exe_time.Elapsed();
-    double bandwidth = 2.0*v_factor*vec_size*sizeof(int)*n_iter*2.0/(kernel_time*1000000000);
+    double bandwidth = 2.0* 3.0*v_factor*vec_size*sizeof(int)*n_iter/(kernel_time*1000000000);
     std::cout << "Elapsed time: " << kernel_time << std::endl;
     std::cout << "Bandwidth(GB/s): " << bandwidth << std::endl;
 }
@@ -507,7 +508,7 @@ int main(int argc, char* argv[]) {
   IntVector grid_yy_rho_mu_d3, grid_yy_rho_mu_temp_d3;
 
   const int DDR_width = 16;
-  int delay = 4*grid_d.grid_size_x/(DDR_width*3)*grid_d.grid_size_y+ 1000;
+  int delay = 8*4*grid_d.grid_size_x/(6)*grid_d.grid_size_y+ 900 + 139*8/2+12/2; //872
 
   grid_yy_rho_mu_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
   grid_yy_rho_mu_temp_d1.resize(grid_d.data_size_bytes_dim8/(DDR_width*sizeof(float)*3) + delay*2);
@@ -527,7 +528,7 @@ int main(int argc, char* argv[]) {
 
   float dt = 0.1;
   for(int i = 0; i < batch; i++){
-    for(int itr = 0; itr < 4*n_iter; itr++){
+    for(int itr = 0; itr < 2*n_iter; itr++){
        fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
        calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
 
