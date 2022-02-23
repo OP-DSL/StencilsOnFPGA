@@ -373,8 +373,8 @@ void stencil_comp(queue &q, IntVector &input1, IntVector &output1, IntVector &in
 
   data_g.plane_diff = data_g.xblocks * grid_sizey_4;
   data_g.line_diff = data_g.xblocks - 2;
-  data_g.gridsize_pr = data_g.plane_size * (data_g.limit_z) * batch;
-
+  data_g.gridsize_pr = data_g.plane_size * (data_g.grid_sizez * batch+ ORDER) ;
+  data_g.rd_limit = data_g.plane_size*data_g.grid_sizez*batch;
 
   unsigned totol_8 = (data_g.plane_size * (data_g.grid_sizez)* batch);
   unsigned int total_itr_48 = totol_8/2;
@@ -527,22 +527,7 @@ int main(int argc, char* argv[]) {
 
 
   float dt = 0.1;
-  for(int i = 0; i < batch; i++){
-    for(int itr = 0; itr < 2*n_iter; itr++){
-       fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
-       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
 
-       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k2[grid_d.dims * i], grid_d);
-       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k2[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
-
-       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k3[grid_d.dims * i], grid_d);
-       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k3[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 1.0, grid_d);
-
-       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k4[grid_d.dims * i], grid_d);
-       final_update_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], &grid_k2[grid_d.dims * i], &grid_k3[grid_d.dims * i], &grid_k4[grid_d.dims * i], dt, grid_d);
-
-     }
-   }
 
 
   // Create device selector for the device of your interest.
@@ -577,6 +562,24 @@ int main(int argc, char* argv[]) {
     std::cout << "An exception is caught for vector add.\n";
     std::terminate();
   }
+
+
+    for(int i = 0; i < batch; i++){
+    for(int itr = 0; itr < 2*n_iter; itr++){
+       fd3d_pml_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], grid_d);
+       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
+
+       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k2[grid_d.dims * i], grid_d);
+       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k2[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 0.5, grid_d);
+
+       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k3[grid_d.dims * i], grid_d);
+       calc_ytemp_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k3[grid_d.dims * i], dt, &grid_yy_rho_mu_temp[grid_d.dims * i], 1.0, grid_d);
+
+       fd3d_pml_kernel(&grid_yy_rho_mu_temp[grid_d.dims * i], &grid_k4[grid_d.dims * i], grid_d);
+       final_update_kernel(&grid_yy_rho_mu[grid_d.dims * i], &grid_k1[grid_d.dims * i], &grid_k2[grid_d.dims * i], &grid_k3[grid_d.dims * i], &grid_k4[grid_d.dims * i], dt, grid_d);
+
+     }
+   }
 
   copy_FromVec(grid_yy_rho_mu_d1, grid_yy_rho_mu_d2, grid_yy_rho_mu_d3, temp,  grid_d.data_size_bytes_dim8, delay);
   // for(int i = 0; i < grid_d.data_size_bytes_dim8/4; i++){

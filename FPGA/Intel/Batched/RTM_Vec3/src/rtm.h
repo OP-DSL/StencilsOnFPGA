@@ -94,6 +94,7 @@ struct data_G{
 	unsigned int plane_size;
 	unsigned int line_diff;
 	unsigned short outer_loop_limit;
+	unsigned int rd_limit;
 };
 
 

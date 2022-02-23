@@ -14,6 +14,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 	unsigned int plane_diff = data_g.plane_diff;
 	unsigned int plane_size = data_g.plane_size;
 	unsigned int gridsize = data_g.gridsize_pr;
+	unsigned int rd_limit= data_g.rd_limit;
 	
 	event e1 = q.submit([&](handler &h) {
     h.single_task<class struct_idX<pidx>>([=] () [[intel::kernel_args_restrict]]{
@@ -109,7 +110,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 				}
 
 				if(cmp3){
-					i_dum = 0;
+					i_dum = ORDER;
 				} else if(cmp2){
 					i_dum = i + 1;
 				}
@@ -185,7 +186,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 				s_4_4_7 = window_z_p_4[j_p];   //set
 				window_z_p_3[j_p] = s_4_4_7;   //set	
 
-				bool cond_tmp1 = (i < grid_sizez);
+				bool cond_tmp1 = (itr < rd_limit);
 				if(cond_tmp1){
 					s_4_4_8 = pipeM::PipeAt<pidx>::read(); // set
 				}
@@ -494,7 +495,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 
 				}
 
-				bool cond_wr = (i >= ORDER) && ( i < grid_sizez + ORDER);
+				bool cond_wr = (i >= ORDER); // && ( i < grid_sizez + ORDER);
 				if(cond_wr ) {
 					pipeM::PipeAt<pidx+1>::write(update_j);
 					pipeM::PipeAt<pidx+11>::write(s_4_4_4);
