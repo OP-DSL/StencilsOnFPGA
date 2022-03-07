@@ -44,19 +44,18 @@ int pml_width;
 int half, order, nx, ny, nz;
 #include "./coeffs/coeffs8.h"
 // OPS header file
+// #define OPS_SOA
 #define OPS_3D
 #include "ops_seq_v2.h"
 
 #include "poisson_kernel.h"
 
-void derivs(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten,  ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyy);
 
-void calc_ytemp(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, float* dt, ops_dat yy, ops_dat kk, ops_dat ytemp);
 
-void calc_ytemp2(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, float* dt, ops_dat yy, ops_dat kk, ops_dat ytemp);
+void derivs1(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten,  float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyy, ops_dat sum);
+void derivs2(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten,  float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyyIn,  ops_dat dyyOut, ops_dat sum);
 
-void final_update(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, float* dt, ops_dat k1, ops_dat k2, ops_dat k3, ops_dat k4, ops_dat yy);
-
+void derivs3(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten,  float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyyIn, ops_dat sum);
 	      
 /******************************************************************************
 * Main program
@@ -209,28 +208,32 @@ int main(int argc,  char **argv)
 	
   sprintf(buf,"coordx");
   ops_dat coordx = ops_decl_dat(blocks, 1, size, base, d_m, d_p, temp, "float", buf);
+
   sprintf(buf,"coordy");
   ops_dat coordy = ops_decl_dat(blocks, 1, size, base, d_m, d_p, temp, "float", buf);
+
   sprintf(buf,"coordz");
   ops_dat coordz= ops_decl_dat(blocks, 1, size, base, d_m, d_p, temp, "float", buf);
+
   sprintf(buf,"rho");
   ops_dat rho = ops_decl_dat(blocks, 1, size, base, d_m, d_p, temp, "float", buf);
+
   sprintf(buf,"mu");
   ops_dat mu = ops_decl_dat(blocks, 1, size, base, d_m, d_p, temp, "float", buf);
+
   sprintf(buf,"yy");
   ops_dat yy = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
-  sprintf(buf,"yy_new");
-  ops_dat yy_new = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
-  sprintf(buf,"ytemp");
-  ops_dat ytemp = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
-  sprintf(buf,"k1");
-  ops_dat k1 = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
-  sprintf(buf,"k2");
-  ops_dat k2 = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
-  sprintf(buf,"k3");
-  ops_dat k3 = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
-  sprintf(buf,"k4");
-  ops_dat k4 = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
+
+  sprintf(buf,"yy_sum");
+  ops_dat yy_sum = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
+
+  sprintf(buf,"ytemp1");
+  ops_dat ytemp1 = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
+
+  sprintf(buf,"ytemp2");
+  ops_dat ytemp2 = ops_decl_dat(blocks, 6, size, base, d_m, d_p, temp, "float", buf);
+
+
   
   sizes[0] = size[0];
   sizes[1] = size[1];
@@ -241,39 +244,6 @@ int main(int argc,  char **argv)
 
   printf(" HERE 4\n");
 
-  /*
-  /* THERE ARE NO HALOS IF ngrid_x = 1, ngrix_y = 1, and ngrid_z = 1, SO I'M IGNORING 
-     THIS HERE AND LEAVING THE CODE AS IS*/
-  /*
-  ops_halo *halos = (ops_halo *)malloc(2*(ngrid_x*(ngrid_y-1)+(ngrid_x-1)*ngrid_y*sizeof(ops_halo)));
-  int off = 0;
-  for (int j = 0; j < ngrid_y; j++) {
-    for (int i = 0; i < ngrid_x; i++) {
-      if (i > 0) {
-        int halo_iter[] = {1,sizes[2*(i+ngrid_x*j)+1]};
-        int base_from[] = {sizes[2*(i-1+ngrid_x*j)]-1,0};
-        int base_to[] = {-1,0};
-        int dir[] = {1,2};
-
-        halos[off++] = ops_decl_halo(mu[i-1+ngrid_x*j], mu[i+ngrid_x*j], halo_iter, base_from, base_to, dir, dir);
-        base_from[0] = 0; base_to[0] = sizes[2*(i+ngrid_x*j)];
-        halos[off++] = ops_decl_halo(mu[i+ngrid_x*j], mu[i-1+ngrid_x*j], halo_iter, base_from, base_to, dir, dir);
-      }
-      if (j > 0) {
-        int halo_iter[] = {sizes[2*(i+ngrid_x*j)],1};
-        int base_from[] = {0,sizes[2*(i+ngrid_x*(j-1))+1]-1};
-        int base_to[] = {0,-1};
-        int dir[] = {1,2};
-
-        halos[off++] = ops_decl_halo(mu[i+ngrid_x*(j-1)], mu[i+ngrid_x*j], halo_iter, base_from, base_to, dir, dir);
-        base_from[1] = 0; base_to[1] = sizes[2*(i+ngrid_x*j)+1];
-        halos[off++] = ops_decl_halo(mu[i+ngrid_x*j], mu[i+ngrid_x*(j-1)], halo_iter, base_from, base_to, dir, dir);
-      }
-    }
-  }
-  if (off != 2*(ngrid_x*(ngrid_y-1)+(ngrid_x-1)*ngrid_y)) printf("Something is not right\n");
-  ops_halo_group u_halos = ops_decl_halo_group(off,halos);
-  */
   
   ops_partition("");
   ops_checkpointing_init("check.h5", 5.0, 0);
@@ -299,7 +269,9 @@ int main(int argc,  char **argv)
 	       ops_arg_idx(),
 	       ops_arg_dat(rho, 1, S3D_000, "float", OPS_WRITE),
 	       ops_arg_dat(mu, 1, S3D_000, "float", OPS_WRITE),
-	       ops_arg_dat(yy, 6, S3D_000, "float", OPS_WRITE));
+	       ops_arg_dat(yy, 6, S3D_000, "float", OPS_WRITE),
+	       ops_arg_dat(yy_sum, 6, S3D_000, "float", OPS_WRITE),
+	       );
 		
   printf(" DONE populate\n");
   
@@ -312,57 +284,29 @@ int main(int argc,  char **argv)
     // if (iter%itertile == 0) ops_execute();
 
     /* The following is 4th order Runga-Kutta */
-    float dt = 0.1; //=sqrt(mu/rho);
-    // calc dydt (store it in k1)
-    // printf(" CALLING FIRST derivs \n");
-    derivs(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
-	   rho, mu, yy, k1);
+    float dt = 0.1f; //=sqrt(mu/rho);
+    float scale1 = 0.5f;
+    float scale2 = 1/6.0f;
 
-    // printf(" DONE derivs\n");
-    
-
-    //k1 = dt*k1
-    //ytemp = yy + k1/2.
-    calc_ytemp(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, &dt,
-	       yy, k1, ytemp);
+    derivs1(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
+	   &dt, &scale1, &scale2, rho, mu, yy, ytemp1, yy_sum);
 
 
+    scale1 = 0.5f;
+    scale2 = 1/3.0f;
+    derivs2(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
+	   &dt, &scale1, &scale2, rho, mu, yy, ytemp1, ytemp2, yy_sum);
 
-    // ops_print_dat_to_txtfile(k1, "k1.txt");
-    
-    // printf(" DONE calc_ytemp\n");
-
-    // calc dytemp/dt store it in k2
-    derivs(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
-	   rho, mu, ytemp, k2);
-    //k2 = dt*k2 parallel_loop
-    //ytemp = yy + k2/2.
-    calc_ytemp(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, &dt,
-	       yy, k2, ytemp);
-
-    //calc dytemp/dt (stored it in k3)
-    derivs(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
-	   rho, mu, ytemp, k3);
-    //k3 = k3*dt
-    //ytemp = yy + k3
-    calc_ytemp2(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, &dt,
-	        yy, k3, ytemp);
-
-    
-
-    //calc dytemp/dt, stored in k4
-    derivs(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
-	   rho, mu, ytemp, k4);
+    scale1 = 1.0f;
+    scale2 = 1/3.0f;
+    derivs2(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
+	   &dt, &scale1, &scale2, rho, mu, yy, ytemp2, ytemp1, yy_sum);
 
 
-    //k4 = dt*k4
-    //yy = yy + k1/6. + k2/3. + k3/3. + k4/6.
-    final_update(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, &dt,
-	         k1, k2, k3, k4, yy);
-
-   
-
-
+    scale1 = 1.0f;
+    scale2 = 1/6.0f;
+    derivs3(ngrid_x, ngrid_y, ngrid_z, sizes, disps, blocks, S3D_000, S3D_big_sten,
+	   &dt, &scale1, &scale2, rho, mu, yy, ytemp1, yy_sum);
 
 	     
   }
@@ -400,64 +344,60 @@ int main(int argc,  char **argv)
   ops_exit();
 }
 
-void derivs(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyy) {
+void derivs1(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten, float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyy, ops_dat sum) {
   
   int iter_range[] = {0,sizes[0],0,sizes[1],0,sizes[2]};
-  ops_par_loop(fd3d_pml_kernel, "fd3d_pml_kernel", blocks, 3, iter_range,
+  ops_par_loop(fd3d_pml_kernel1, "fd3d_pml_kernel1", blocks, 3, iter_range,
 	       ops_arg_gbl(&disps[0], 1, "int", OPS_READ),
 	       ops_arg_gbl(&disps[1], 1, "int", OPS_READ),
 	       ops_arg_gbl(&disps[2], 1, "int", OPS_READ),
 	       ops_arg_idx(),
+	       ops_arg_gbl(dt, 1, "float", OPS_READ),
+	       ops_arg_gbl(scale1, 1, "float", OPS_READ),
+	       ops_arg_gbl(scale2, 1, "float", OPS_READ),
 	       ops_arg_dat(rho, 1, S3D_000, "float", OPS_READ),
 	       ops_arg_dat(mu, 1, S3D_000, "float", OPS_READ),
 	       ops_arg_dat(yy, 6, S3D_big_sten, "float", OPS_READ),
-	       ops_arg_dat(dyy, 6, S3D_000, "float", OPS_WRITE)
+	       ops_arg_dat(dyy, 6, S3D_000, "float", OPS_WRITE),
+	       ops_arg_dat(sum, 6, S3D_000, "float", OPS_WRITE)
 	       );
 }
 
-void calc_ytemp(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, float* dt, ops_dat yy, ops_dat kk, ops_dat ytemp) {
-
+void derivs2(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten, float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyyIn,  ops_dat dyyOut, ops_dat sum) {
+  
   int iter_range[] = {0,sizes[0],0,sizes[1],0,sizes[2]};
-  ops_par_loop(calc_ytemp_kernel, "calc_ytemp_kernel", blocks, 3, iter_range,
-               ops_arg_gbl(&disps[0], 1, "int", OPS_READ),
+  ops_par_loop(fd3d_pml_kernel2, "fd3d_pml_kernel2", blocks, 3, iter_range,
+	       ops_arg_gbl(&disps[0], 1, "int", OPS_READ),
 	       ops_arg_gbl(&disps[1], 1, "int", OPS_READ),
 	       ops_arg_gbl(&disps[2], 1, "int", OPS_READ),
 	       ops_arg_idx(),
-	       ops_arg_gbl(dt, 1, "float", OPS_READ),	       
+	       ops_arg_gbl(dt, 1, "float", OPS_READ),
+	       ops_arg_gbl(scale1, 1, "float", OPS_READ),
+	       ops_arg_gbl(scale2, 1, "float", OPS_READ),
+	       ops_arg_dat(rho, 1, S3D_000, "float", OPS_READ),
+	       ops_arg_dat(mu, 1, S3D_000, "float", OPS_READ),
 	       ops_arg_dat(yy, 6, S3D_000, "float", OPS_READ),
-	       ops_arg_dat(kk, 6, S3D_000, "float", OPS_RW),
-	       ops_arg_dat(ytemp, 6, S3D_000, "float", OPS_WRITE)
+	       ops_arg_dat(dyyIn, 6, S3D_big_sten, "float", OPS_READ),
+	       ops_arg_dat(dyyOut, 6, S3D_000, "float", OPS_WRITE),
+	       ops_arg_dat(sum, 6, S3D_000, "float", OPS_RW)
 	       );
 }
 
-void calc_ytemp2(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, float* dt, ops_dat yy, ops_dat kk, ops_dat ytemp) {
-
+void derivs3(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten, float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy,  ops_dat dyyIn, ops_dat sum) {
+  
   int iter_range[] = {0,sizes[0],0,sizes[1],0,sizes[2]};
-  ops_par_loop(calc_ytemp2_kernel, "calc_ytemp2_kernel", blocks, 3, iter_range,
-               ops_arg_gbl(&disps[0], 1, "int", OPS_READ),
+  ops_par_loop(fd3d_pml_kernel3, "fd3d_pml_kernel3", blocks, 3, iter_range,
+	       ops_arg_gbl(&disps[0], 1, "int", OPS_READ),
 	       ops_arg_gbl(&disps[1], 1, "int", OPS_READ),
 	       ops_arg_gbl(&disps[2], 1, "int", OPS_READ),
 	       ops_arg_idx(),
-	       ops_arg_gbl(dt, 1, "float", OPS_READ),	       
-	       ops_arg_dat(yy, 6, S3D_000, "float", OPS_READ),
-	       ops_arg_dat(kk, 6, S3D_000, "float", OPS_RW),
-	       ops_arg_dat(ytemp, 6, S3D_000, "float", OPS_WRITE)
+	       ops_arg_gbl(dt, 1, "float", OPS_READ),
+	       ops_arg_gbl(scale1, 1, "float", OPS_READ),
+	       ops_arg_gbl(scale2, 1, "float", OPS_READ),
+	       ops_arg_dat(rho, 1, S3D_000, "float", OPS_READ),
+	       ops_arg_dat(mu, 1, S3D_000, "float", OPS_READ),
+	       ops_arg_dat(yy, 6, S3D_000, "float", OPS_RW),
+	       ops_arg_dat(dyyIn, 6, S3D_big_sten, "float", OPS_READ),
+	       ops_arg_dat(sum, 6, S3D_000, "float", OPS_READ)
 	       );
 }
-
-void final_update(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, float* dt, ops_dat k1, ops_dat k2, ops_dat k3, ops_dat k4, ops_dat yy) {
-
-  int iter_range[] = {0,sizes[0],0,sizes[1],0,sizes[2]};
-  ops_par_loop(final_update_kernel, "final_update_kernel", blocks, 3, iter_range,
-         ops_arg_gbl(&disps[0], 1, "int", OPS_READ),
-	       ops_arg_gbl(&disps[1], 1, "int", OPS_READ),
-	       ops_arg_gbl(&disps[2], 1, "int", OPS_READ),
-	       ops_arg_idx(),
-	       ops_arg_gbl(dt, 1, "float", OPS_READ),	       
-	       ops_arg_dat(k1, 6, S3D_000, "float", OPS_READ),
-	       ops_arg_dat(k2, 6, S3D_000, "float", OPS_READ),
-	       ops_arg_dat(k3, 6, S3D_000, "float", OPS_READ),
-	       ops_arg_dat(k4, 6, S3D_000, "float", OPS_RW),
-	       ops_arg_dat(yy, 6, S3D_000, "float", OPS_RW)
-	       );
-}  

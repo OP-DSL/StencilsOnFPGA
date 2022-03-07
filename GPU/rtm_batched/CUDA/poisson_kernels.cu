@@ -54,8 +54,7 @@ void ops_decl_const_char(int dim, char const *type, int size, char *dat,
 }
 
 // user kernel files
-#include "calc_ytemp2_kernel_cuda_kernel.cu"
-#include "calc_ytemp_kernel_cuda_kernel.cu"
-#include "fd3d_pml_kernel_cuda_kernel.cu"
-#include "final_update_kernel_cuda_kernel.cu"
+#include "fd3d_pml_kernel1_cuda_kernel.cu"
+#include "fd3d_pml_kernel2_cuda_kernel.cu"
+#include "fd3d_pml_kernel3_cuda_kernel.cu"
 #include "rtm_kernel_populate_cuda_kernel.cu"
