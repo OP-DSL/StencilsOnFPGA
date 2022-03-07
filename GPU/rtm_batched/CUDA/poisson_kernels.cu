@@ -4,6 +4,7 @@
 // header
 #define OPS_API 2
 #define OPS_3D
+#define OPS_SOA
 #include "ops_lib_cpp.h"
 
 #include "ops_cuda_reduction.h"

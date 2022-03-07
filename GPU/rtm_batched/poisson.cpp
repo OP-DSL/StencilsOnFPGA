@@ -44,12 +44,11 @@ int pml_width;
 int half, order, nx, ny, nz;
 #include "./coeffs/coeffs8.h"
 // OPS header file
-// #define OPS_SOA
+#define OPS_SOA
 #define OPS_3D
 #include "ops_seq_v2.h"
 
 #include "poisson_kernel.h"
-
 
 
 void derivs1(int ngrid_x, int ngrid_y, int ngrid_z, int* sizes, int disps[], ops_block blocks, ops_stencil S3D_000, ops_stencil S3D_big_sten,  float* dt,  float* scale1, float* scale2, ops_dat rho, ops_dat mu, ops_dat yy, ops_dat dyy, ops_dat sum);
@@ -66,7 +65,7 @@ int main(int argc,  char **argv)
 
   // OPS initialisation  
   ops_init(argc,argv,1);
-
+  OPS_instance::getOPSInstance()->OPS_soa = 1;
 
   //Mesh
   int logical_size_x = 16;
