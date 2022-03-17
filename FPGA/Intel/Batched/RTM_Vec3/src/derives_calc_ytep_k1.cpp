@@ -2,6 +2,7 @@
 template <int pidx>
 static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,true> n_iter){
 
+	// getting pre computed values used in the kernel 
 	unsigned short grid_sizex = data_g.grid_sizex;
 	unsigned short xblocks = data_g.xblocks;
 	unsigned short sizex = data_g.sizex;
@@ -19,17 +20,18 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 	event e1 = q.submit([&](handler &h) {
     h.single_task<class struct_idX<pidx>>([=] () [[intel::kernel_args_restrict]]{
 
-    
 
+    	// time marching loop, pipe-lining is disabled due to data dependency 
 		[[intel::disable_loop_pipelining]]
 		for(ac_int<12,true> u_itr = 0; u_itr < n_iter; u_itr++){
 
+
+			// on chipe memory for window buffers
 			struct dPath window_z_p_1[plane_buff_size];
 			struct dPath window_z_p_2[plane_buff_size];
 			struct dPath window_z_p_3[plane_buff_size];
 			struct dPath window_z_p_4[plane_buff_size];
 
-			
 			struct dPath window_y_p_1[line_buff_size];
 			struct dPath window_y_p_2[line_buff_size];
 			struct dPath window_y_p_3[line_buff_size];
@@ -46,6 +48,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 			struct dPath window_z_n_4[plane_buff_size];
 
 
+			// All the stencil points 
 			struct dPath s_4_4_8, s_4_4_7, s_4_4_6, s_4_4_5;
 			struct dPath s_4_8_4, s_4_7_4, s_4_6_4, s_4_5_4;
 			struct dPath s_8_4_4, s_7_4_4, s_6_4_4, s_5_4_4;
@@ -58,6 +61,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 			struct dPath yy_final_out;
 
 
+			// kernel code 
 			const float c[2*ORDER+1] = {0.0035714285714285713,-0.0380952380952381,0.2,-0.8,0.0,0.8,-0.2,0.0380952380952381,-0.0035714285714285713};
 			const float invdx = 200; // 1/0.005
 			const float invdy = 200; // 1/0.005
@@ -79,9 +83,11 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 			short zpmlend=zend-pml_width;
 
 
-			
+			// x, y, z indices 
 			unsigned short i = 0, j = 0, k = 0;
 			unsigned short i_dum = 0, j_dum = 0, k_dum = 0;
+
+			// pointers for window buffers  
 			unsigned short j_p_dum = 0, j_l_dum = 0, j_p_diff_dum = 0, j_l_diff_dum = 0;
 			unsigned short j_p, j_l, j_p_diff, j_l_diff;
 			
@@ -99,16 +105,19 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 				bool cmp2 = cmp1 && (j == grid_sizey-1);
 				bool cmp3 = cmp2 && (i == limit_z-1);
 
+				// end of xdim condition 
 				if(cmp1){
 					k_dum = 0;
 				}
 
+				// end of ydim condition and increment 
 				if(cmp2){
 					j_dum = 0;
 				} else if(cmp1){
 					j_dum = j + 1;
 				}
 
+				// end of Zdim condition and increment 
 				if(cmp3){
 					i_dum = ORDER;
 				} else if(cmp2){
@@ -116,9 +125,14 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 				}
 
 
+
+
 				i = i_dum;
 				j = j_dum;
 				k = k_dum;
+
+ 				
+ 				// data flow through window buffers in each clock cycles 
 
 				// negetive z arm
 				s_4_4_0 = window_z_n_4[j_p];
@@ -194,6 +208,8 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 
 
 
+
+				// pointer updates for the window buffers 
 				
 				if(j_p >= plane_size-1){
 					j_p_dum = 0;
@@ -223,7 +239,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 				}
 
 
-
+				// getting all the required points in X, Y, Z directions
 				// X ARM
 				#define x_ARM(x)   {s_2_4_4.data[INC2((x))], s_3_4_4.data[INC0((x))], s_3_4_4.data[INC1((x))], s_3_4_4.data[INC2((x))], s_4_4_4.data[INC0((x))], s_4_4_4.data[INC1((x))], s_4_4_4.data[INC2((x))], s_5_4_4.data[INC0((x))], s_5_4_4.data[INC1((x))], \
 									s_3_4_4.data[INC0((x))], s_3_4_4.data[INC1((x))], s_3_4_4.data[INC2((x))], s_4_4_4.data[INC0((x))], s_4_4_4.data[INC1((x))], s_4_4_4.data[INC2((x))], s_5_4_4.data[INC0((x))], s_5_4_4.data[INC1((x))], s_5_4_4.data[INC2((x))], \
@@ -282,6 +298,7 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 				struct dPath y_tmp_vec;
 				struct dPath y_final_vec;
 
+				// slightly modified kernel code for data flow computing 
 				#pragma unroll 3
 				for(int v = 0; v < 3; v++){
 
@@ -494,6 +511,8 @@ static void derives_calc_ytep_k1( queue &q, struct data_G data_g,   ac_int<12,tr
 					}
 
 				}
+
+				// avoiding invalid results and writing back others to pipe
 
 				bool cond_wr = (i >= ORDER); // && ( i < grid_sizez + ORDER);
 				if(cond_wr ) {
