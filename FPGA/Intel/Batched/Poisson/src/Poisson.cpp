@@ -31,7 +31,6 @@
 using namespace sycl;
 
 
-const int unroll_factor = 2;
 const int v_factor = 16;
 
 struct dPath {
@@ -46,8 +45,6 @@ size_t vector_size = 10000;
 typedef std::vector<struct dPath> IntVector; 
 typedef std::vector<float> IntVectorS; 
 
-// using rd_pipe = INTEL::pipe<class pVec16_r, dPath, 1024>;
-// using wr_pipe = INTEL::pipe<class pVec16_w, dPath, 1024>;
 
 #define UFACTOR 2
 
@@ -79,60 +76,13 @@ struct pipeM{
 };
 
 
-using PipeBlock = pipeS;
-
-// using rd_pipe1 = INTEL::pipe<class rd_pipe1, dPath, 8>;
-// using wr_pipe1 = INTEL::pipe<class wr_pipe1, dPath, 8>;
-
-
-// Create an exception handler for asynchronous SYCL exceptions
-static auto exception_handler = [](sycl::exception_list e_list) {
-  for (std::exception_ptr const &e : e_list) {
-    try {
-      std::rethrow_exception(e);
-    }
-    catch (std::exception const &e) {
-#if _DEBUG
-      std::cout << "Failure" << std::endl;
-#endif
-      std::terminate();
-    }
-  }
-};
+//------------------------------------------------------------------------------------
+//----------------------------FPGA kernels--------------------------------------------
+//------------------------------------------------------------------------------------
 
 
 
-int copy_ToVec(float* grid_s, IntVector &grid_d1, IntVector &grid_d2, int grid_size, int delay){
-  for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
-      for(int v = 0; v < 16; v++){
-        if((i % 2) == 0){
-          grid_d1[i/2+delay].data[v] = grid_s[i*16+v];
-        } else {
-          grid_d2[i/2+delay].data[v] = grid_s[i*16+v];
-        }
-      }
-
-  }
-    return 0;
-}
-
-int copy_FromVec(IntVector &grid_d1, IntVector &grid_d2,  float* grid_s, int grid_size, int delay){
-  printf("grid_size:%d\n", grid_size);
-  for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
-      for(int v = 0; v < 16; v++){
-        if((i % 2) == 0){
-          grid_s[i*16+v] = grid_d1[i/2+delay].data[v];
-        } else  {
-          grid_s[i*16+v] = grid_d2[i/2+delay].data[v];
-        } 
-      }
-
-  }
-    return 0;
-}
-
-
-
+// Kernel to read from and write to global memory 
 // this is kind of same function for all 2D stencil applications 
 // slight variant will be required when there are data strctures need to be read and write
 template<int idx1, int idx2>
@@ -146,13 +96,14 @@ event stencil_read_write(queue &q, buffer<struct dPath, 1> &in_buf1, buffer<stru
 
       accessor in2(in_buf2, h);
       accessor out2(out_buf2, h);
-      // int total_itr = ((nx*ny)*(nz))/VFACTOR;
 
       h.single_task<class stencil_read_write>([=] () [[intel::kernel_args_restrict]]{
 
+      // pipe-lining is disabled as there is inter iteration dependency 
       [[intel::disable_loop_pipelining]]
       for(ac_int<12,true> itr = 0; itr < n_iter; itr++){
 
+        // condition for swapping read and write location
         accessor ptrR1 = ((itr & 1) == 0) ? in1 : out1;
         accessor ptrW1 = ((itr & 1) == 1) ? in1 : out1;
 
@@ -187,7 +138,7 @@ event stencil_read_write(queue &q, buffer<struct dPath, 1> &in_buf1, buffer<stru
 
 
 
-
+// this module convert data path width from 512 to 256
 // this module will be same for all the designs 
 template<int idx1, int idx2>
 void PipeConvert_512_256(queue &q, int total_itr, ac_int<12,true> n_iter){
@@ -209,6 +160,9 @@ void PipeConvert_512_256(queue &q, int total_itr, ac_int<12,true> n_iter){
     });
 }
 
+
+// kernel function for stencil computation 
+// A simple cross stencil is used here
 template <size_t idx>  struct struct_idX;
 template<int idx, int IdX, int DMAX, int VFACTOR>
 void stencil_compute(queue &q, ac_int<14,true>  nx, ac_int<14,true>  ny, ac_int<14,true>  nz, int total_itr, ac_int<12,true> n_iter){
@@ -335,6 +289,7 @@ void stencil_compute(queue &q, ac_int<14,true>  nx, ac_int<14,true>  ny, ac_int<
 }
 
 
+// this module convert data path from 256 to 512
 // this module also same for all the designs 
 template <int idx1, int idx2>
 void PipeConvert_256_512(queue &q, int total_itr,  ac_int<12,true> n_iter){
@@ -359,6 +314,7 @@ void PipeConvert_256_512(queue &q, int total_itr,  ac_int<12,true> n_iter){
 
 
 
+// template based time marching loop unrolling 
 template <int N, int n> struct loop {
   static void instantiate(queue &q, int nx, int ny, int nz, int total_itr, int n_iter){
     loop<N-1, n-1>::instantiate(q, nx, ny, nz, total_itr, n_iter);
@@ -373,7 +329,61 @@ struct loop<1, 1>{
   }
 };
 
-// loop<90> l;
+
+//-------------------------------------------------------------------------------
+//------------------------ END of FPGA kernels ----------------------------------
+//-------------------------------------------------------------------------------
+
+
+
+// host support functions 
+
+
+// Create an exception handler for asynchronous SYCL exceptions
+static auto exception_handler = [](sycl::exception_list e_list) {
+  for (std::exception_ptr const &e : e_list) {
+    try {
+      std::rethrow_exception(e);
+    }
+    catch (std::exception const &e) {
+#if _DEBUG
+      std::cout << "Failure" << std::endl;
+#endif
+      std::terminate();
+    }
+  }
+};
+
+
+
+int copy_ToVec(float* grid_s, IntVector &grid_d1, IntVector &grid_d2, int grid_size, int delay){
+  for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
+      for(int v = 0; v < 16; v++){
+        if((i % 2) == 0){
+          grid_d1[i/2+delay].data[v] = grid_s[i*16+v];
+        } else {
+          grid_d2[i/2+delay].data[v] = grid_s[i*16+v];
+        }
+      }
+
+  }
+    return 0;
+}
+
+int copy_FromVec(IntVector &grid_d1, IntVector &grid_d2,  float* grid_s, int grid_size, int delay){
+  printf("grid_size:%d\n", grid_size);
+  for(int i = 0; i < grid_size/(16*sizeof(float)); i++){
+      for(int v = 0; v < 16; v++){
+        if((i % 2) == 0){
+          grid_s[i*16+v] = grid_d1[i/2+delay].data[v];
+        } else  {
+          grid_s[i*16+v] = grid_d2[i/2+delay].data[v];
+        } 
+      }
+
+  }
+    return 0;
+}
 
 
 //************************************
