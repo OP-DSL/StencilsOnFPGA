@@ -2,8 +2,8 @@
 #include <hls_stream.h>
 #include <ap_axi_sdata.h>
 #include <math.h>
-#include "stencil.h"
-#include "stencil.cpp"
+#include <stencil.h>
+#include <stencil.cpp>
 
 
 static void process_SLR (hls::stream <t_pkt> &in, hls::stream <t_pkt> &out,
@@ -79,8 +79,6 @@ void stencil_SLR0(
 		hls::stream <t_pkt> &in,
 		hls::stream <t_pkt> &out){
 
-
-	#pragma HLS INTERFACE s_axilite port = tile bundle = control
 	#pragma HLS INTERFACE axis port = tile_s_out  register
 	#pragma HLS INTERFACE axis port = tile_s_in  register
 	#pragma HLS INTERFACE axis port = in  register
