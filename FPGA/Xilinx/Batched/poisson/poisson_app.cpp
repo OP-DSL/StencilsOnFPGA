@@ -60,6 +60,7 @@ int main(int argc, char **argv)
   // allocating memory for host program and FPGA buffers
   unsigned int data_size_bytes = data_g.grid_size_x * data_g.grid_size_y * sizeof(float)*data_g.batch;
   data_size_bytes = (data_size_bytes % 16 != 0) ? (data_size_bytes/16 +1)*16 : data_size_bytes;
+
   if(data_size_bytes >= 4000000000){
 	  printf("Maximum buffer size is exceeded!\n");
 	  return 0;
@@ -132,8 +133,6 @@ int main(int argc, char **argv)
     //Copy input data to device global memory
     OCL_CHECK(err, err = q.enqueueMigrateMemObjects({buffer_input}, 0 /* 0 means from host*/));
 
-    uint64_t wtime = 0;
-    uint64_t nstimestart, nstimeend;
     auto start = std::chrono::high_resolution_clock::now();
 
 
