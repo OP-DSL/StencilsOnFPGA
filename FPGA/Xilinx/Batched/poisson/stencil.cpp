@@ -1,6 +1,6 @@
 
 
-static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out, struct data_G data_g){
+static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out, data_G data_g){
     unsigned int total_itr = data_g.total_itr_256;
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=1
@@ -10,7 +10,7 @@ static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out,
 	}
 }
 
-static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out, struct data_G data_g){
+static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out, data_G data_g){
 	unsigned int total_itr = data_g.total_itr_256;
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=1
@@ -21,7 +21,7 @@ static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out,
 	}
 }
 
-static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint256_dt> &wr_buffer, struct data_G data_g){
+static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint256_dt> &wr_buffer, data_G data_g){
 
 	short end_index = data_g.end_index;
 
@@ -41,11 +41,9 @@ static void process_grid( hls::stream<uint256_dt> &rd_buffer, hls::stream<uint25
     // cyclic buffers to hold larger number of elements
 	uint256_dt row1_n[max_depth_8];
 	uint256_dt row2_n[max_depth_8];
-	uint256_dt row3_n[max_depth_8];
 
-	#pragma HLS RESOURCE variable=row1_n core=XPM_MEMORY uram latency=2
-	#pragma HLS RESOURCE variable=row2_n core=XPM_MEMORY uram latency=2
-	#pragma HLS RESOURCE variable=row3_n core=XPM_MEMORY uram latency=2
+	#pragma HLS BIND_STORAGE variable=row1_n type=ram_t2p impl=uram latency=2
+	#pragma HLS BIND_STORAGE variable=row2_n type=ram_t2p impl=uram latency=2
 
 	unsigned short sizex = data_g.sizex;
 	unsigned short end_row = data_g.end_row;
