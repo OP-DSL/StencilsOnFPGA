@@ -1,0 +1,85 @@
+#include <cmath>
+#include <iostream>
+#include <assert.h>
+#include <algorithm>
+
+#define INV_SQRT_2 sqrt(0.5)
+#define EPSILON 0.0001
+
+
+struct GridParameter
+{
+	unsigned int logical_size_x;
+	unsigned int logical_size_y;
+
+	unsigned int act_size_x;
+	unsigned int act_size_y;
+
+	unsigned int grid_size_x;
+	unsigned int grid_size_y;
+
+	unsigned int batch;
+	unsigned int num_iter;
+};
+
+struct BlacksholesParameter
+{
+	float spot_price;
+	float strike_price;
+	float time_to_maturity; //in years
+	float volatility;
+	float risk_free_rate;
+	float delta_t;
+	float delta_S;
+	unsigned int N;
+	unsigned int K;
+	float SMaxFactor;
+};
+
+float standard_normal_CDF(float val);
+
+/*
+ * @brief 	European call option calculation with exact solution.
+ *
+ * 			C = N(d1)*S - N(d2)*K*exp(-r*t)
+ *
+ * 				N(x)	- Standard Normal CDF
+ * 				S		- Spot price
+ * 				K		- Strike price
+ * 				r		- Risk free rate
+ * 				t		- Time to maturity
+ * 				sigma	- Volatility
+ *
+ * 			d1 = (log(S/K) + (r + (sigmaˆ2) / 2)t) / (sigma *sqrt(t))
+ *
+ * 			d2 = d1 - sigma * sqrt(t)
+ *
+ * @param	spot_price			The price of the underlying instrument at t=0
+ * 			strike_price		The exercising price of the option contract
+ * 			time_to_maturity	The expire time from the contract date in years.
+ * 			risk_free_rate		Risk free interest rate, which is an estimated value
+ * 								in case the rate is changing
+ * 			volatility			Volatility of the underlying instrument which is an
+ * 								estimated value from the past stock price of the
+ * 								underlying instrument.
+ *
+ * @return 	estimated value of the option.
+ */
+float blacksholes_call_option(float spot_price, float strike_price,
+		float time_to_maturity, float risk_free_rate, float volatility);
+
+void test_blacksholes_call_option();
+
+int bs_implicit1(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+
+float get_call_option(float* current, GridParameter gridData, BlacksholesParameter computeParam);
+
+int bs_implicit_istvan(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+
+void intialize_grid(float* grid, GridParameter gridProp, BlacksholesParameter computeParam);
+
+bool stencil_stability(BlacksholesParameter computeParam);
+
+double square_error(float* current, float* next, GridParameter gridData);
+
+int copy_grid(float* curent, float* next, GridParameter gridData);
