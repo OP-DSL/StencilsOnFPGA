@@ -44,6 +44,9 @@ int main(int argc, char **argv)
 
 	printf("Grid: %dx1 , %d iterations, %d batches\n", gridProp.logical_size_x, gridProp.num_iter, gridProp.batch);
 
+	//Allocating OPS instance
+	OPS_instance * ops_inst = new OPS_instance(argc, argv, 1);
+
 	//adding halo
 	gridProp.act_size_x = gridProp.logical_size_x+2;
 	gridProp.act_size_y = 1;
@@ -63,13 +66,6 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	float * grid_u1_cpu = (float*) aligned_alloc(4096, data_size_bytes);
-	float * grid_u2_cpu = (float*) aligned_alloc(4096, data_size_bytes);
-	float * grid_u3_cpu = (float*) aligned_alloc(4096, data_size_bytes);
-	float * grid_u4_cpu = (float*) aligned_alloc(4096, data_size_bytes);
-
-	test_blacksholes_call_option();
-
 	BlacksholesParameter calcParam;
 
 //	calcParam.spot_price = 16;
@@ -88,36 +84,84 @@ int main(int argc, char **argv)
 	calcParam.delta_t = calcParam.time_to_maturity / calcParam.N;
 	calcParam.delta_S = calcParam.strike_price * calcParam.SMaxFactor/ (calcParam.K);
 
+
+	test_blacksholes_call_option(calcParam);
+
+	//checking stability condition of blacksholes calculation
+	if (stencil_stability(calcParam))
+	{
+		std::cout << "stencil calculation is stable" << std::endl << std::endl;
+	}
+	else
+	{
+		std::cerr << "stencil calculation stability check failed" << std::endl << std::endl;
+		return -1;
+	}
+
+	float * grid_u1_cpu = (float*) aligned_alloc(4096, data_size_bytes);
+	float * grid_u2_cpu = (float*) aligned_alloc(4096, data_size_bytes);
+	float * grid_u3_cpu = (float*) aligned_alloc(4096, data_size_bytes);
+	float * grid_u4_cpu = (float*) aligned_alloc(4096, data_size_bytes);
+	float * grid_ops_result = (float*) aligned_alloc(4096, data_size_bytes);
+
 	intialize_grid(grid_u1_cpu, gridProp, calcParam);
 	copy_grid(grid_u1_cpu, grid_u2_cpu, gridProp);
 	copy_grid(grid_u1_cpu, grid_u3_cpu, gridProp);
 	copy_grid(grid_u1_cpu, grid_u4_cpu, gridProp);
+//	copy_grid(grid_u1_cpu, grid_u1_ops, gridProp);
+//	copy_grid(grid_u1_cpu, grid_u2_ops, gridProp);
 
 	//golden stencil computation on host
+	bs_explicit1(grid_u1_cpu, grid_u2_cpu, gridProp, calcParam);
+	bs_explicit2(grid_u3_cpu, grid_u4_cpu, gridProp, calcParam);
 
-	std::cout << "stencil stability: " << stencil_stability(calcParam) << std::endl;
+	//ops implementation
+	bs_explicit1_ops(grid_ops_result, ops_inst, gridProp, calcParam);
 
-	bs_implicit1(grid_u1_cpu, grid_u2_cpu, gridProp, calcParam);
-//	for (unsigned int itr = 0; itr < calcParam.N / 2; itr++)
+//	for (int i = 0; i < gridProp.act_size_x; i++)
 //	{
-//		bs_implicit1(grid_u1_cpu, grid_u2_cpu, gridProp, calcParam);
-//		bs_implicit1(grid_u2_cpu, grid_u1_cpu, gridProp, calcParam);
+//		if (abs(grid_u1_cpu[i] - grid_ops_result[i]) > EPSILON)
+//		{
+//			std::cout << "value mismatch. i: " << i << " cpu: " << grid_u2_cpu[i] << " ops: " << grid_ops_result[i] << std::endl;
+//		}
+//		else
+//		{
+//			std::cout << "i: " << i << " cpu: " << grid_u2_cpu[i] << " ops: " << grid_ops_result[i] << std::endl;
+//		}
 //	}
-	bs_implicit_istvan(grid_u3_cpu, grid_u4_cpu, gridProp, calcParam);
+
+//	for (int i = 0; i < gridProp.logical_size_x; i++)
+//	{
+//		std::cout << "idx: " << i << ", dat_current: " << grid_ops_result[i] << std::endl;
+//	}
 
 	for (unsigned int bat = 0; bat < gridProp.batch; bat++)
 	{
-//		int offset = bat * gridProp.grid_size_x;
-//
-//		for (unsigned int i = 0; i < gridProp.act_size_x; i++)
-//		{
-//
-//			std::cout << "grid_id: " << offset  + i << " explicit1 val: " << grid_u1_cpu[offset + i] << " istvan explicit val: " << grid_u3_cpu[offset + i] << std::endl;
-//		}
+		int offset = bat * gridProp.grid_size_x;
+
+		for (unsigned int i = 0; i < gridProp.act_size_x; i++)
+		{
+
+			std::cout << "grid_id: " << offset  + i << " explicit1_val: " << grid_u1_cpu[offset + i]
+						<< " explicit1_ops_val: " << grid_ops_result[offset + i] << " istvan explicit val: " << grid_u3_cpu[offset + i] << std::endl;
+		}
 
 		std::cout << "call option price from explicit method: " << get_call_option(grid_u1_cpu, gridProp, calcParam) << std::endl;
 		std::cout << "call option price from istvan explicit method: " << get_call_option(grid_u3_cpu, gridProp, calcParam) << std::endl;
+		std::cout << "call option price from ops explicit method: " << get_call_option(grid_ops_result, gridProp, calcParam) << std::endl;
 	}
+
+	//Free memory
+	free(grid_u1_cpu);
+	free(grid_u2_cpu);
+	free(grid_u3_cpu);
+	free(grid_u4_cpu);
+	free(grid_ops_result);
+//	free(grid_u1_ops);
+//	free(grid_u2_ops);
+
+	//Finalizing the OPS library
+	delete ops_inst;
 
 	return 0;
 }

@@ -1,7 +1,12 @@
+
+#pragma once
+
 #include <cmath>
 #include <iostream>
 #include <assert.h>
 #include <algorithm>
+#include <ops_seq_v2.h>
+#include "blacksholes_ops.h"
 
 #define INV_SQRT_2 sqrt(0.5)
 #define EPSILON 0.0001
@@ -68,13 +73,17 @@ float standard_normal_CDF(float val);
 float blacksholes_call_option(float spot_price, float strike_price,
 		float time_to_maturity, float risk_free_rate, float volatility);
 
-void test_blacksholes_call_option();
+//exact solution. To check the correctness
+float test_blacksholes_call_option(BlacksholesParameter calcParam);
 
-int bs_implicit1(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+int bs_explicit1(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+
+int bs_explicit1_ops(float* result, OPS_instance * ops_inst, GridParameter gridData, BlacksholesParameter computeParam);
 
 float get_call_option(float* current, GridParameter gridData, BlacksholesParameter computeParam);
 
-int bs_implicit_istvan(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+// copy of instvan's implementation explicit1 in BS_1D_CPU
+int bs_explicit2(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
 
 void intialize_grid(float* grid, GridParameter gridProp, BlacksholesParameter computeParam);
 
