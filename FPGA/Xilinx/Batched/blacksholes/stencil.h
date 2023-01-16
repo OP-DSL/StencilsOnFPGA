@@ -2,6 +2,7 @@
 #include <hls_stream.h>
 #include <ap_axi_sdata.h>
 #include <math.h>
+#include <stdio.h>
 
 #pragma once
 
@@ -10,7 +11,7 @@ typedef ap_uint<256> uint256_dt;
 typedef ap_axiu<256,0,0,0> t_pkt;
 
 
-#define SLR_P_STAGE 20
+#define SLR0_P_STAGE 20
 
 //Maximum Tile Size
 #define MAX_SIZE_X 8192
@@ -63,4 +64,3 @@ struct data_G{
 	unsigned short endindex_minus1;
 };
 
-#endif
