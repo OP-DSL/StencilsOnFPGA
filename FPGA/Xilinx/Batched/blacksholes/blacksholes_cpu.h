@@ -5,6 +5,7 @@
 #include <iostream>
 #include <assert.h>
 #include <algorithm>
+#include <chrono>
 #include "blacksholes_common.h"
 //#include "blacksholes_ops.h"
 
@@ -43,7 +44,7 @@ float blacksholes_call_option(float spot_price, float strike_price,
 		float time_to_maturity, float risk_free_rate, float volatility);
 
 //exact solution. To check the correctness
-float test_blacksholes_call_option(BlacksholesParameter calcParam);
+float test_blacksholes_call_option(BlacksholesParameter calcParam, double * time_to_run=nullptr);
 
 int bs_explicit1(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
 

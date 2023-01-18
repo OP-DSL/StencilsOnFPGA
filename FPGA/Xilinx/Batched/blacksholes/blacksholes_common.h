@@ -4,7 +4,6 @@
 #define INV_SQRT_2 sqrt(0.5)
 #define EPSILON 0.0001
 
-
 struct GridParameter
 {
 	unsigned int logical_size_x;

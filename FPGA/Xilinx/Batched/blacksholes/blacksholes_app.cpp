@@ -213,6 +213,9 @@ int main(int argc, char **argv)
 		std::cout << "call option price from fpga explicit method: " << get_call_option(grid_u1_d, gridProp, calcParam) << std::endl;
 	}
 
+	//Finalizing the OPS library
+	delete ops_inst;
+	
 	//Free memory
 	free(grid_u1_cpu);
 	free(grid_u2_cpu);
@@ -222,8 +225,7 @@ int main(int argc, char **argv)
 //	free(grid_u1_ops);
 //	free(grid_u2_ops);
 
-	//Finalizing the OPS library
-	delete ops_inst;
+
 
 	return 0;
 }
