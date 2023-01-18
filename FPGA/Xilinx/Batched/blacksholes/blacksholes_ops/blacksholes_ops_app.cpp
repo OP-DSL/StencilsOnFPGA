@@ -1,10 +1,24 @@
-//Implementation to run OPS implementation as standalone with contrast to blacksholes_app.
+
+/** @brief Implementation to run OPS implementation as standalone with contrast to blacksholes_app.
+  * @author Beniel Thileepan
+  * @details
+  *
+  *  This version is based on C/C++ and uses the OPS prototype highlevel domain
+  *  specific API for developing multi-block Structured mesh applications.
+  *  Coded in a way both C++ API/ C API can be selected by defining OPS_CPP_API.
+  */
 
 #include <iostream>
+#include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
+#include <chrono>
 #include "../blacksholes_common.h"
 #include "../blacksholes_cpu.h"
 
 #define OPS_1D
+#define OPS_CPP_API
+// #define DEBUG_VERBOSE
 #include "ops_seq_v2.h"
 #include "blacksholes_ops_kernels.h"
 
@@ -15,7 +29,7 @@ int main(int argc, char **argv)
 	GridParameter gridProp;
 	gridProp.logical_size_x = 200;
 	gridProp.logical_size_y = 1;
-	gridProp.batch = 1;
+	gridProp.batch = 10;
 	gridProp.num_iter = 2000;
 
 	unsigned int vectorization_factor = 8;
@@ -100,24 +114,60 @@ int main(int argc, char **argv)
 	float * grid_u2_cpu = (float*) aligned_alloc(4096, data_size_bytes);
 	float * grid_ops_result = (float*) aligned_alloc(4096, data_size_bytes);
 
-    //Allocating OPS instance
-	OPS_instance * ops_inst = new OPS_instance(argc, argv, 1);
-
+	auto init_start_clk_point = std::chrono::high_resolution_clock::now();
 	intialize_grid(grid_u1_cpu, gridProp, calcParam);
 	copy_grid(grid_u1_cpu, grid_u2_cpu, gridProp);
+	auto init_stop_clk_point = std::chrono::high_resolution_clock::now();
+	double runtime_init = std::chrono::duration<double, std::micro> (init_stop_clk_point - init_start_clk_point).count();
+
+#ifdef DEBUG_VERBOSE
+	std::cout << std::endl;
+	std::cout << "*********************************************"  << std::endl;
+	std::cout << "**            intial grid values           **"  << std::endl;
+	std::cout << "*********************************************"  << std::endl;
+
+	for (unsigned int bat = 0; bat < gridProp.batch; bat++)
+	{
+		int offset = bat * gridProp.grid_size_x;
+
+		for (unsigned int i = 0; i < gridProp.act_size_x; i++)
+		{
+			std::cout << "grid_id: " << offset  + i << " initial_val: " << grid_u1_cpu[offset + i]<< std::endl;
+		}
+	}
+	std::cout << "============================================="  << std::endl << std::endl;
+#endif
 
     //explicit blacksholes test
-    test_blacksholes_call_option(calcParam);
+    double runtime_direct_per_option = test_blacksholes_call_option(calcParam);
 
 	//golden stencil computation on host
+
+	auto naive_start_clk_point = std::chrono::high_resolution_clock::now();
 	bs_explicit1(grid_u1_cpu, grid_u2_cpu, gridProp, calcParam);
+	auto naive_stop_clk_point = std::chrono::high_resolution_clock::now();
+	double runtime_naive_stencil = std::chrono::duration<double, std::micro> (naive_stop_clk_point - naive_start_clk_point).count(); 
 
     // ****************************************************
 	// ** ops implementation
 	// ****************************************************
+	
+	auto ops_init_start_clk_point = std::chrono::high_resolution_clock::now();
 
-		//ops_block
+#ifdef OPS_CPP_API
+    //Allocating OPS instance
+	OPS_instance * ops_inst = new OPS_instance(argc, argv, 1);
+#else
+	//OPS initialization 
+	ops_init(argc, argv, 1);
+#endif
+
+	//ops_block
+#ifdef OPS_CPP_API
 	ops_block grid1D = ops_inst->decl_block(1, "grid1D");
+#else
+	ops_block grid1D = ops_decl_block(1, "grid1D");
+#endif
 
 	//ops_data
 	int size[] = {static_cast<int>(gridProp.logical_size_x)};
@@ -128,22 +178,42 @@ int main(int argc, char **argv)
 	float *current = nullptr, *next = nullptr;
 	float *a = nullptr, *b = nullptr, *c = nullptr;
 
+#ifdef OPS_CPP_API
 	ops_dat dat_current = grid1D->decl_dat(1, size, base, d_m, d_p, current,"float", "dat_current");
 	ops_dat dat_next = grid1D->decl_dat(1, size, base, d_m, d_p, next,"float", "dat_next");
 	ops_dat dat_a = grid1D->decl_dat(1, size, base, d_m, d_p, a, "float", "dat_a");
 	ops_dat dat_b = grid1D->decl_dat(1, size, base, d_m, d_p, b, "float", "dat_b");
 	ops_dat dat_c = grid1D->decl_dat(1, size, base, d_m, d_p, c, "float", "dat_c");
-	//ops_constant declarations
-//	ops_inst->decl_const("delta_S", 1, "float", calcParam.delta_S);
+#else
+	ops_dat dat_current = ops_decl_dat(grid1D, 1, size, base, d_m, d_p, current,"float", "dat_current");
+	ops_dat dat_next = ops_decl_dat(grid1D, 1, size, base, d_m, d_p, next,"float", "dat_next");
+	ops_dat dat_a = ops_decl_dat(grid1D, 1, size, base, d_m, d_p, a, "float", "dat_a");
+	ops_dat dat_b = ops_decl_dat(grid1D, 1, size, base, d_m, d_p, b, "float", "dat_b");
+	ops_dat dat_c = ops_decl_dat(grid1D, 1, size, base, d_m, d_p, c, "float", "dat_c");
+#endif
 
-	//defining the stencil
+	//defining the stencils
 	int s1d_3pt[] = {-1, 0, 1};
-	ops_stencil S1D_3pt = ops_inst->decl_stencil(1, 3, s1d_3pt, "3pt");
-
 	int s1d_1pt[] = {0};
-	ops_stencil S1D_1pt = ops_inst->decl_stencil(1, 1, s1d_1pt, "1pt");
 
-	ops_inst->partition("");
+#ifdef OPS_CPP_API
+	ops_stencil S1D_3pt = ops_inst->decl_stencil(1, 3, s1d_3pt, "3pt");
+	ops_stencil S1D_1pt = ops_inst->decl_stencil(1, 1, s1d_1pt, "1pt");
+#else
+	ops_stencil S1D_3pt = ops_decl_stencil(1, 3, s1d_3pt, "3pt");
+	ops_stencil S1D_1pt = ops_decl_stencil(1, 1, s1d_1pt, "1pt");
+#endif
+
+	//partition
+#ifdef OPS_CPP_API
+	ops_inst->partition("1D_BLOCK_DECOMPOSE");
+#else
+	ops_partition("1D_BLOCK_DECOMPOSE");
+#endif
+
+	auto ops_init_stop_clk_point = std::chrono::high_resolution_clock::now();
+	double runtime_ops_init = std::chrono::duration<double, std::micro> (ops_init_stop_clk_point - ops_init_start_clk_point).count();
+	auto ops_start_clk_point = ops_init_stop_clk_point;
 
 	for (int bat = 0; bat < gridProp.batch; bat++)
 	{
@@ -204,14 +274,36 @@ int main(int argc, char **argv)
 		}
 
 		//fetching back result
-		std::cout << "dat_current_size_x: " << dat_current->size[0] << std::endl;
-
-		std::cout << "local n partition: " << dat_current->get_local_npartitions() << " global n partition: " << dat_current->get_global_npartitions() << std::endl;
 		ops_dat_fetch_data_host(dat_current, 0, (char*)(grid_ops_result + offset + 1));
 	}
 
+	auto ops_stop_clk_point = std::chrono::high_resolution_clock::now();
+	double runtime_ops_stencil = std::chrono::duration<double, std::micro> (ops_stop_clk_point - ops_start_clk_point).count();
 
+	std::cout << std::endl;
+	std::cout << "*********************************************"  << std::endl;
+	std::cout << "**      Debug info after calculations      **"  << std::endl;
+	std::cout << "*********************************************"  << std::endl;
 
+#ifdef DEBUG_VERBOSE
+	for (unsigned int bat = 0; bat < gridProp.batch; bat++)
+	{
+		int offset = bat * gridProp.grid_size_x;
+
+		for (unsigned int i = 0; i < gridProp.act_size_x; i++)
+		{
+
+			std::cout << "grid_id: " << offset  + i << " explicit1_val: " << grid_u1_cpu[offset + i]
+						<< " explicit1_ops_val: " << grid_ops_result[offset + i]<< std::endl;
+		}
+	}
+#endif
+	std::cout << "call option price from explicit method: " << get_call_option(grid_u1_cpu, gridProp, calcParam) << std::endl;
+	std::cout << "call option price from ops explicit method: " << get_call_option(grid_ops_result, gridProp, calcParam) << std::endl;
+
+	std::cout << "============================================="  << std::endl << std::endl;
+
+	
 //	for (int i = 0; i < gridProp.logical_size_x; i++)
 //	{
 //		std::cout << "idx: " << i << ", dat_current: " << grid_ops_result[i] << std::endl;
@@ -219,10 +311,27 @@ int main(int argc, char **argv)
 //	ops_print_dat_to_txtfile_core(dat_current, "dat_current.txt");
 //	ops_print_dat_to_txtfile_core(dat_next, "dat_next.txt");
 	
+	std::cout << std::endl;
+	std::cout << "*********************************************"  << std::endl;
+	std::cout << "**            runtime summery              **"  << std::endl;
+	std::cout << "*********************************************"  << std::endl;
 
+	std::cout << " * direct_cal time        : " << runtime_direct_per_option * gridProp.batch << "us" << std::endl;
+	std::cout << "      |--> time_per_option: " << runtime_direct_per_option << "us" << std::endl;
+	std::cout << " * naive stencil runtime  : " << runtime_init + runtime_naive_stencil << "us" << std::endl;
+	std::cout << "      |--> grid_init time : " << runtime_init << "us" << std::endl;
+	std::cout << "      |--> calc time      : " << runtime_naive_stencil << "us" << std::endl;
+	std::cout << " * ops stencil runtime    : " << runtime_ops_stencil + runtime_ops_init << "us" << std::endl;
+	std::cout << "      |--> grid_init time : " << runtime_ops_init << "us" << std::endl;
+	std::cout << "      |--> calc time      : " << runtime_ops_stencil << "us" << std::endl;
+	std::cout << "============================================="  << std::endl << std::endl;
 	//Finalizing the OPS library
+#ifdef OPS_CPP_API
 	delete ops_inst;
-    
+#else
+	ops_exit();
+#endif
+
     free(grid_u1_cpu);
     free(grid_u2_cpu);
     free(grid_ops_result);

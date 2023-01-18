@@ -2,7 +2,8 @@
 
 void ops_krnl_interior_init(ACC<float> & data, const int *idx, const float *deltaS, const float *strikePrice)
 {
-	data(0) = std::max((idx[0] + 1)*(*deltaS) - (*strikePrice), (float)0);
+	float tmpVal = (idx[0] + 1)*(*deltaS) - (*strikePrice);
+	data(0) = tmpVal > 0.0 ? tmpVal : 0.0;
 }
 
 void ops_krnl_zero_init(ACC<float> &data)

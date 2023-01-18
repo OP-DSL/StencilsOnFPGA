@@ -23,5 +23,3 @@ APP=blacksholes
 MAIN_SRC=blacksholes_ops_app
 
 include $(OPS_INSTALL_PATH)/../makefiles/Makefile.c_app
-
-CXXFLAGS += -DOPS_CPP_API

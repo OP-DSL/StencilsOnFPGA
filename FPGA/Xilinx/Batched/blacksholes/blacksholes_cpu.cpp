@@ -18,7 +18,7 @@ float blacksholes_call_option(float spot_price, float strike_price,
 	return return_on_portfolio - return_on_deposit;
 }
 
-float test_blacksholes_call_option(BlacksholesParameter calcParam)
+float test_blacksholes_call_option(BlacksholesParameter calcParam, double * time_to_run)
 {
 	//testing blacksholes_call_option
 
@@ -43,10 +43,17 @@ float test_blacksholes_call_option(BlacksholesParameter calcParam)
 	std::cout << "volatility		: " << volatility << std::endl;
 	std::cout << "risk_free_rate	: " << risk_free_rate << std::endl;
 	std::cout << std::endl;
+	auto start = std::chrono::high_resolution_clock::now();
 	float option_price = blacksholes_call_option(spot_price, strike_price, t, risk_free_rate, volatility);
+	auto stop = std::chrono::high_resolution_clock::now();
 	std::cout << "option_price 		: " << option_price << std::endl;
+	std::chrono::duration<double, std::micro> time_us = stop - start;
+	std::cout << "runtime			: " << time_us.count() <<"us" << std::endl; 
 	std::cout << "============================================="  << std::endl << std::endl;
 
+	if (time_to_run != nullptr)
+		*time_to_run = time_us.count();
+		
 	return  option_price;
 }
 
