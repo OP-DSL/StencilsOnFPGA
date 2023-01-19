@@ -1,5 +1,6 @@
 
-#incldue "blacksholes_ops.h"
+#include "blacksholes_ops.h"
+#include "blacksholes_ops_kernels.h"
 
 int bs_explicit1_ops(float* result, OPS_instance * ops_inst, GridParameter gridData, BlacksholesParameter computeParam)
 {

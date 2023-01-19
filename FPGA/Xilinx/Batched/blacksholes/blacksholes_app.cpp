@@ -3,7 +3,8 @@
 #include <cstdlib>
 #include "xcl2.hpp"
 #include "blacksholes_cpu.h"
-#include "blacksholes_ops.h"
+#include "blacksholes_ops/blacksholes_ops.h"
+
 /******************************************************************************
 * Main program
 *******************************************************************************/
@@ -140,7 +141,8 @@ int main(int argc, char **argv)
 	cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};
 
 	OCL_CHECK(err, cl::Program program(context, {device}, bins, NULL, &err))
-	OCL_CHECK(err, cl::Kernel krnl_slr0(program, "stencil_SLR0", &err));
+	OCL_CHECK(err, cl::Kernel krnl_slr0(program, "stencil_SLR", &err));
+	OCL_CHECK(err, cl::Kernel krnl_mem2stream(program, "stencil_mem2stream", &err));
 
 	//Allocation Buffer in Global Memory
 	OCL_CHECK(err, cl::Buffer buffer_curr(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE, data_size_bytes, grid_u1_d, &err));
@@ -148,8 +150,6 @@ int main(int argc, char **argv)
 
 	//set Kernel arguments
 	int narg = 0;
-	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, buffer_curr));
-	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, buffer_next));
 	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, gridProp.logical_size_x));
 	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, gridProp.logical_size_y));
 	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, gridProp.grid_size_x));
@@ -166,11 +166,20 @@ int main(int argc, char **argv)
 	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, calcParam.K));
 	OCL_CHECK(err, err = krnl_slr0.setArg(narg++, calcParam.SMaxFactor));
 
+	narg = 0;
+	OCL_CHECK(err, err = krnl_mem2stream.setArg(narg++, buffer_curr));
+	OCL_CHECK(err, err = krnl_mem2stream.setArg(narg++, buffer_next));
+	OCL_CHECK(err, err = krnl_mem2stream.setArg(narg++, gridProp.num_iter/40));
+	OCL_CHECK(err, err = krnl_mem2stream.setArg(narg++, gridProp.grid_size_x));
+	OCL_CHECK(err, err = krnl_mem2stream.setArg(narg++, gridProp.grid_size_y));
+	OCL_CHECK(err, err = krnl_mem2stream.setArg(narg++, gridProp.batch));
+
 	//Copy input buffer to device
-	OCL_CHECK(err, err = queue.enqueueMigrateMemObjects({buffer_curr}, 0));
+	OCL_CHECK(err, err = queue.enqueueMigrateMemObjects({buffer_curr, buffer_next}, 0));
 
 	queue.finish();
 
+	OCL_CHECK(err, err = queue.enqueueTask(krnl_mem2stream));
 	OCL_CHECK(err, err = queue.enqueueTask(krnl_slr0));
 
 	queue.finish();
@@ -204,7 +213,9 @@ int main(int argc, char **argv)
 		{
 
 			std::cout << "grid_id: " << offset  + i << " explicit1_val: " << grid_u1_cpu[offset + i]
-						<< " explicit1_ops_val: " << grid_ops_result[offset + i] << " istvan explicit val: " << grid_u3_cpu[offset + i] << std::endl;
+					 << " explicit1_ops_val: " << grid_ops_result[offset + i]
+					 << " istvan explicit val: " << grid_u3_cpu[offset + i]
+					 << " fpga_explicit_val: " << grid_u1_d[offset + i] << std::endl;
 		}
 
 		std::cout << "call option price from explicit method: " << get_call_option(grid_u1_cpu, gridProp, calcParam) << std::endl;
@@ -212,9 +223,6 @@ int main(int argc, char **argv)
 		std::cout << "call option price from ops explicit method: " << get_call_option(grid_ops_result, gridProp, calcParam) << std::endl;
 		std::cout << "call option price from fpga explicit method: " << get_call_option(grid_u1_d, gridProp, calcParam) << std::endl;
 	}
-
-	//Finalizing the OPS library
-	delete ops_inst;
 	
 	//Free memory
 	free(grid_u1_cpu);
@@ -222,10 +230,8 @@ int main(int argc, char **argv)
 	free(grid_u3_cpu);
 	free(grid_u4_cpu);
 	free(grid_ops_result);
-//	free(grid_u1_ops);
-//	free(grid_u2_ops);
-
-
+	free(grid_u1_d);
+	free(grid_u2_d);
 
 	return 0;
 }

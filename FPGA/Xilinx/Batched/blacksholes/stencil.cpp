@@ -1,7 +1,7 @@
 #include "stencil.h"
 
-static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out, struct data_G data_g){
-    unsigned int total_itr = data_g.total_itr_256;
+static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out,  const unsigned int total_itr)
+{
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=1
 		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
@@ -10,8 +10,8 @@ static void axis2_fifo256(hls::stream <t_pkt> &in, hls::stream<uint256_dt> &out,
 	}
 }
 
-static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out, struct data_G data_g){
-	unsigned int total_itr = data_g.total_itr_256;
+static void fifo256_2axis(hls::stream <uint256_dt> &in, hls::stream<t_pkt> &out, const unsigned int total_itr)
+{
 	for (int itr = 0; itr < total_itr; itr++){
 		#pragma HLS PIPELINE II=1
 		#pragma HLS loop_tripcount min=min_grid max=max_grid avg=avg_grid
