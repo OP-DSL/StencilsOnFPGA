@@ -46,7 +46,7 @@ void process_SLR(hls::stream <t_pkt> &in, hls::stream <t_pkt> &out,
 	}
 
 	// sending data to kernel or mem2stream which resides in another SLR
-	fifo256_2axis(streamArray[20], out, data_g.total_itr_256);
+	fifo256_2axis(streamArray[SLR0_P_STAGE], out, data_g.total_itr_256);
 }
 
 extern "C" {
