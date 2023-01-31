@@ -11,7 +11,7 @@ typedef ap_uint<256> uint256_dt;
 typedef ap_axiu<256,0,0,0> t_pkt;
 
 
-#define SLR0_P_STAGE 4
+#define SLR0_P_STAGE 2
 
 //Maximum Tile Size
 #define MAX_SIZE_X 8192

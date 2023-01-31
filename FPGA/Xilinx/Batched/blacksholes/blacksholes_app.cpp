@@ -8,6 +8,7 @@
 
 //#define DEBUG_VERBOSE
 #define MULTI_SLR
+#define FPGA_RUN_ONLY
 /******************************************************************************
 * Main program
 *******************************************************************************/
@@ -16,7 +17,7 @@ int main(int argc, char **argv)
 	GridParameter gridProp;
 	gridProp.logical_size_x = 200;
 	gridProp.logical_size_y = 1;
-	gridProp.batch = 10;
+	gridProp.batch = 10000;
 	gridProp.num_iter = 2040;
 
 	unsigned int vectorization_factor = 8;
@@ -135,6 +136,7 @@ int main(int argc, char **argv)
 	double copy_grid_runtime = std::chrono::duration<double, std::micro>
 				(copy_grid_stop_point - init_grid_stop_copy_grid_start_point).count();
 
+#ifndef FPGA_RUN_ONLY
 	//golden stencil computation on host
 	auto explicit1_start_point = std::chrono::high_resolution_clock::now();
 	bs_explicit1(grid_u1_cpu, grid_u2_cpu, gridProp, calcParam);
@@ -152,6 +154,7 @@ int main(int argc, char **argv)
 				(explicit2_stop_point_explicit_ops_start_point - explicit1_stop_explicit2_start_point).count();
 	double explicit_ops_runtime = std::chrono::duration<double, std::micro>
 				(explicit_ops_stop_point - explicit2_stop_point_explicit_ops_start_point).count();
+#endif
 
 	//OPENCL HOST CODE AREA START
 	auto binaryFile = argv[1];
@@ -187,7 +190,7 @@ int main(int argc, char **argv)
 	unsigned int total_SLR = 1;
 #endif
 
-	unsigned int number_of_process_grid_per_SLR = 4;
+	unsigned int number_of_process_grid_per_SLR = 2;
 	unsigned int total_process_grids_per_iter =  total_SLR * number_of_process_grid_per_SLR * 2;
 	unsigned int num_iter = gridProp.num_iter/total_process_grids_per_iter;
 	//set Kernel arguments
@@ -308,17 +311,22 @@ int main(int argc, char **argv)
 		for (unsigned int i = 0; i < gridProp.act_size_x; i++)
 		{
 
-			std::cout << "grid_id: " << offset  + i << " explicit1_val: " << grid_u1_cpu[offset + i]
+			std::cout << "grid_id: " << offset  + i
+#ifndef FPGA_RUN_ONLY
+					 << " explicit1_val: " << grid_u1_cpu[offset + i]
 					 << " explicit1_ops_val: " << grid_ops_result[offset + i]
 					 << " istvan explicit val: " << grid_u3_cpu[offset + i]
+#endif
 					 << " fpga_explicit_val: " << grid_u1_d[offset + i] << std::endl;
 		}
 	}
 #endif
 	
+#ifndef FPGA_RUN_ONLY
 	std::cout << "call option price from explicit method: " << get_call_option(grid_u1_cpu, gridProp, calcParam) << std::endl;
 	std::cout << "call option price from istvan explicit method: " << get_call_option(grid_u3_cpu, gridProp, calcParam) << std::endl;
 	std::cout << "call option price from ops explicit method: " << get_call_option(grid_ops_result, gridProp, calcParam) << std::endl;
+#endif
 	std::cout << "call option price from fpga explicit method: " << get_call_option(grid_u1_d, gridProp, calcParam) << std::endl;
 
 	std::cout << "============================================="  << std::endl << std::endl;
@@ -329,6 +337,7 @@ int main(int argc, char **argv)
 	std::cout << "**            runtime summery              **"  << std::endl;
 	std::cout << "*********************************************"  << std::endl;
 
+#ifndef FPGA_RUN_ONLY
 	std::cout << " * direct_cal time        : " << direct_calc_runtime << " us" << std::endl;
 	std::cout << "      |--> time_per_option: " << direct_calc_runtime  / gridProp.batch << " us" << std::endl;
 	std::cout << " * naive stencil runtime  : " << init_grid_runtime + copy_grid_runtime + explicit1_runtime << " us" << std::endl;
@@ -338,6 +347,7 @@ int main(int argc, char **argv)
 	std::cout << "      |--> grid_init time : " << init_grid_runtime + copy_grid_runtime << " us" << std::endl;
 	std::cout << "      |--> calc time      : " << explicit2_runtime << " us" << std::endl;
 	std::cout << " * ops stencil runtime    : " << explicit_ops_runtime << " us" << std::endl;
+#endif
 	std::cout << " * fpga runtime           : " << init_grid_runtime + h_to_d_runtime
 				+ kernels_runtime + d_to_h_runtime << " us" << std::endl;
 	std::cout << "      |--> grid_init time : " << init_grid_runtime<< " us" << std::endl;
