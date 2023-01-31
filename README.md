@@ -5,6 +5,7 @@ Implementation currently includes following applications.
 - jac2D9pt (9-point 2D stencil) 
 - jac3D7pt (7-point 3D stencil) 
 - RTM (multiple stencil loops with 25 point 3D stencils)
+- blacksholes (3-point 1D stencil. Xilinx batch only)
 
 Batched version targets small and medium sized meshes while Spatially blocked/Tiled version targets larger meshes which fits into 4GB buffer limit.
 
