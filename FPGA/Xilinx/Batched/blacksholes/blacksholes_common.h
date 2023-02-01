@@ -31,4 +31,5 @@ struct BlacksholesParameter
 	unsigned int N;
 	unsigned int K;
 	float SMaxFactor;
+	bool stable;
 };

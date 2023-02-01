@@ -59,30 +59,33 @@ float test_blacksholes_call_option(BlacksholesParameter calcParam, double * time
 
 
 // golden non optimised stencil computation on host PC. 1D stencil calculation
-int bs_explicit1(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam)
+int bs_explicit1(float* current, float *next, GridParameter gridData, std::vector<BlacksholesParameter> & computeParam)
 {
+	assert(computeParam.size() == gridData.batch);
+
 	for (unsigned int bat = 0; bat < gridData.batch; bat++)
 	{
 		int offset 	= bat * gridData.grid_size_x;
-		float alpha = computeParam.volatility * computeParam.volatility * computeParam.delta_t;
-		float beta = computeParam.risk_free_rate * computeParam.delta_t;
+		float alpha = computeParam[bat].volatility *  computeParam[bat].volatility *  computeParam[bat].delta_t;
+		float beta =  computeParam[bat].risk_free_rate *  computeParam[bat].delta_t;
 
 		float ak[gridData.grid_size_x];
 		float bk[gridData.grid_size_x];
 		float ck[gridData.grid_size_x];
 
-		for (unsigned int i = 0; i < computeParam.N; i+=2)
+		//Initializing coefficients
+		for (unsigned int j = 1; j < gridData.act_size_x - 1; j++)
+		{
+			unsigned int index = j;
+			ak[j] = 0.5 * (alpha * index * index - beta * index);
+			bk[j] = 1 - alpha * index * index - beta;
+			ck[j] = 0.5 * (alpha * index * index + beta * index);
+		}
+
+		for (unsigned int i = 0; i <  computeParam[bat].N; i+=2)
 		{
 			for (unsigned int j = 1; j < gridData.act_size_x - 1; j++) //excluding ghost
 			{
-				if (i == 0) //Initializing coefficients
-				{
-					unsigned int index = j;
-					ak[j] = 0.5 * (alpha * index * index - beta * index);
-					bk[j] = 1 - alpha * index * index - beta;
-					ck[j] = 0.5 * (alpha * index * index + beta * index);
-				}
-
 				next[offset + j] = ak[j] * current[offset + j - 1]
 								 + bk[j] * current[offset + j]
 								 + ck[j] * current[offset + j + 1];
@@ -104,7 +107,7 @@ int bs_explicit1(float* current, float *next, GridParameter gridData, Blackshole
 }
 
 //get the exact call option pricing for given spot price and strike price
-float get_call_option(float* current, GridParameter gridData, BlacksholesParameter computeParam)
+float get_call_option(float* data, BlacksholesParameter computeParam)
 {
 	float index 	= (float)computeParam.spot_price / ((float) computeParam.strike_price * computeParam.SMaxFactor) * computeParam.K;
 	unsigned int indexLower 	= (int)std::floor(index);
@@ -113,28 +116,29 @@ float get_call_option(float* current, GridParameter gridData, BlacksholesParamet
 	float option_price = 0.0;
 
 	if (indexUpper < computeParam.K)
-		option_price = (current[indexLower] * (indexUpper - index) + current[indexUpper] * (index - indexLower));
+		option_price = (data[indexLower] * (indexUpper - index) + data[indexUpper] * (index - indexLower));
 	else
-		option_price = current[computeParam.K];
+		option_price = data[computeParam.K];
 
 	return option_price;
 }
 
 
 // copy of instvan's implementation explicit1 in BS_1D_CPU
-int bs_explicit2(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam)
+int bs_explicit2(float* current, float *next, GridParameter gridData, std::vector<BlacksholesParameter> & computeParam)
 {
-	computeParam.delta_S = computeParam.SMaxFactor * computeParam.strike_price / (computeParam.K - 1); //This is how it is defined in istvan' implementation.
-	float c1 = 0.5 * computeParam.delta_t * computeParam.volatility * computeParam.volatility / (computeParam.delta_S * computeParam.delta_S);
-	float c2 = 0.5 * computeParam.delta_t * computeParam.risk_free_rate / computeParam.delta_S;
-	float c3 = computeParam.risk_free_rate * computeParam.delta_t;
-	float S, lambda, gamma;
-	float a[gridData.grid_size_x], b[gridData.grid_size_x], c[gridData.grid_size_x];
+	assert(computeParam.size() == gridData.batch);
 
 	for (unsigned int bat = 0; bat < gridData.batch; bat++)
 	{
 		unsigned int offset = bat * gridData.grid_size_x;
 
+		float delta_S = computeParam[bat].SMaxFactor * computeParam[bat].strike_price / (computeParam[bat].K - 1); //This is how it is defined in istvan' implementation.
+		float c1 = 0.5 * computeParam[bat].delta_t * computeParam[bat].volatility * computeParam[bat].volatility / (delta_S * delta_S);
+		float c2 = 0.5 * computeParam[bat].delta_t * computeParam[bat].risk_free_rate / delta_S;
+		float c3 = computeParam[bat].risk_free_rate * computeParam[bat].delta_t;
+		float S, lambda, gamma;
+		float a[gridData.grid_size_x], b[gridData.grid_size_x], c[gridData.grid_size_x];
 		//intialize data
 		current[offset + 0] = 0.0f;
 		next[offset + 0] = 0.0f;
@@ -143,7 +147,7 @@ int bs_explicit2(float* current, float *next, GridParameter gridData, Blackshole
 
 		for (unsigned int i = 0; i < gridData.act_size_x - 2; i++)
 		{
-			current[offset + i+1] = (i*computeParam.delta_S) > computeParam.strike_price ? (i*computeParam.delta_S - computeParam.strike_price) : 0.0f;
+			current[offset + i + 1] = (i * delta_S) > computeParam[bat].strike_price ? (i * delta_S - computeParam[bat].strike_price) : 0.0f;
 //			std::cout << "Init curent[" << i + 1 << "]: " << current[offset + i + 1]  << std::endl;
 		}
 
@@ -151,13 +155,13 @@ int bs_explicit2(float* current, float *next, GridParameter gridData, Blackshole
 		next[offset + gridData.act_size_x - 1] = 0.0f;
 //		std::cout << "Init curent[" << gridData.act_size_x - 1 << "]: " << current[offset + gridData.act_size_x - 1]  << std::endl;
 
-		for (unsigned int i = 0; i < computeParam.N; i+=2)
+		for (unsigned int i = 0; i < computeParam[bat].N; i+=2)
 		{
 			for (unsigned int j = 1; j < gridData.act_size_x - 1; j++) //excluding ghost
 			{
 				if (i == 0) //calculating coefficients
 				{
-					S = (j - 1) * computeParam.delta_S;
+					S = (j - 1) * delta_S;
 					lambda = c1 * S * S;
 					gamma = c2 * S;
 
@@ -194,22 +198,34 @@ int bs_explicit2(float* current, float *next, GridParameter gridData, Blackshole
 	return 0;
 }
 
-bool stencil_stability(BlacksholesParameter computeParam)
+bool stencil_stability(BlacksholesParameter computeParam, bool verbose)
 {
-	std::cout << "*********************************************"  << std::endl;
-	std::cout << "**       Blacksholes stability check       **"  << std::endl;
-	std::cout << "*********************************************"  << std::endl;
 
-	std::cout << "1/(sigmaˆ2*(K-1) + 0.5*r): " << (1/(pow(computeParam.volatility, 2)*(computeParam.K - 1) + 0.5*computeParam.risk_free_rate)) << std::endl;
-	std::cout << "delta: " << computeParam.delta_t << std::endl;
-	std::cout << "============================================="  << std::endl << std::endl;
 
 	if (computeParam.delta_t < (1/(pow(computeParam.volatility, 2)*(computeParam.N - 1) + 0.5*computeParam.risk_free_rate)))
 	{
+		if(verbose)
+		{
+			std::cout << "*********************************************"  << std::endl;
+			std::cout << "**   Blacksholes stability check - PASSED  **"  << std::endl;
+			std::cout << "*********************************************"  << std::endl;
+
+			std::cout << "1/(sigmaˆ2*(K-1) + 0.5*r): " << (1/(pow(computeParam.volatility, 2)*(computeParam.K - 1) + 0.5*computeParam.risk_free_rate)) << std::endl;
+			std::cout << "delta: " << computeParam.delta_t << std::endl;
+			std::cout << "============================================="  << std::endl << std::endl;
+		}
 		return true;
 	}
 	else
 	{
+		std::cout << "*********************************************"  << std::endl;
+		std::cout << "**   Blacksholes stability check - FAILED  **"  << std::endl;
+		std::cout << "*********************************************"  << std::endl;
+
+		std::cout << "1/(sigmaˆ2*(K-1) + 0.5*r): " << (1/(pow(computeParam.volatility, 2)*(computeParam.K - 1) + 0.5*computeParam.risk_free_rate)) << std::endl;
+		std::cout << "delta: " << computeParam.delta_t << std::endl;
+		std::cout << "============================================="  << std::endl << std::endl;
+
 		return false;
 	}
 }
@@ -242,7 +258,7 @@ double square_error(float* current, float* next, struct GridParameter gridData)
     return sum;
 }
 
-int copy_grid(float* grid_s, float* grid_d, struct GridParameter gridData)
+int copy_grid(float* grid_s, float* grid_d, GridParameter gridData)
 {
     for(unsigned int bat = 0; bat < gridData.batch; bat++)
     {
@@ -259,13 +275,14 @@ int copy_grid(float* grid_s, float* grid_d, struct GridParameter gridData)
     return 0;
 }
 
-void intialize_grid(float* grid, GridParameter gridProp, BlacksholesParameter computeParam)
+void intialize_grid(float* grid, GridParameter gridProp, std::vector<BlacksholesParameter> & computeParam)
 {
-	float sMax = computeParam.strike_price * computeParam.SMaxFactor;
+	assert(computeParam.size() == gridProp.batch);
 
 	for (unsigned int bat = 0; bat < gridProp.batch; bat++)
 	{
 		int offset = bat * gridProp.grid_size_x * gridProp.grid_size_y;
+		float sMax = computeParam[bat].strike_price * computeParam[bat].SMaxFactor;
 
 		for (unsigned int i = 0; i < gridProp.act_size_y; i++)
 		{
@@ -281,9 +298,8 @@ void intialize_grid(float* grid, GridParameter gridProp, BlacksholesParameter co
 				}
 				else
 				{
-					grid[offset + i * gridProp.grid_size_x + j] = std::max(j*computeParam.delta_S - computeParam.strike_price, (float)0);
+					grid[offset + i * gridProp.grid_size_x + j] = std::max(j*computeParam[bat].delta_S - computeParam[bat].strike_price, (float)0);
 				}
-
 //				std::cout << "grid_id: " << offset + i * gridData.grid_size_x + j << " val: " << grid[offset + i * gridData.grid_size_x + j] << std::endl;
 			}
 		}
