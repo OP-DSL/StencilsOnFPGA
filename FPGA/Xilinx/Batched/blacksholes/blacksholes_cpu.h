@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <algorithm>
 #include <chrono>
+#include <vector>
 #include "blacksholes_common.h"
 //#include "blacksholes_ops.h"
 
@@ -46,16 +47,16 @@ float blacksholes_call_option(float spot_price, float strike_price,
 //exact solution. To check the correctness
 float test_blacksholes_call_option(BlacksholesParameter calcParam, double * time_to_run=nullptr);
 
-int bs_explicit1(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+int bs_explicit1(float* current, float *next, GridParameter gridData, std::vector<BlacksholesParameter> & computeParam);
 
-float get_call_option(float* current, GridParameter gridData, BlacksholesParameter computeParam);
+float get_call_option(float* data, BlacksholesParameter computeParam);
 
 // copy of instvan's implementation explicit1 in BS_1D_CPU
-int bs_explicit2(float* current, float *next, GridParameter gridData, BlacksholesParameter computeParam);
+int bs_explicit2(float* current, float *next, GridParameter gridData, std::vector<BlacksholesParameter> & computeParam);
 
-void intialize_grid(float* grid, GridParameter gridProp, BlacksholesParameter computeParam);
+void intialize_grid(float* grid, GridParameter gridProp, std::vector<BlacksholesParameter> & computeParam);
 
-bool stencil_stability(BlacksholesParameter computeParam);
+bool stencil_stability(BlacksholesParameter computeParam, bool verbose=false);
 
 double square_error(float* current, float* next, GridParameter gridData);
 
