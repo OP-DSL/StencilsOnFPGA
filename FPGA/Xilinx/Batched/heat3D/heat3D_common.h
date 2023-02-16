@@ -6,6 +6,7 @@
 
 #define EPSILON 0.0001
 #define ERROR_TOL 10e-6
+#define NUM_OF_PROCESS_GRID_PER_SLR 8
 
 struct GridParameter
 {

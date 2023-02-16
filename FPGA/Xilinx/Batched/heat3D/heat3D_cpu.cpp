@@ -4,7 +4,7 @@
 
 #include "heat3D_cpu.h"
 
-int heat3D_explicit(float * current, float *next, GridParameter gridData, std::vector<heat3DParameter> calcParam)
+int heat3D_explicit(float * current, float *next, GridParameter gridData, std::vector<heat3DParameter> & calcParam)
 {
     assert(calcParam.size() == gridData.batch);
 
@@ -116,7 +116,7 @@ void initialize_grid(float* grid, GridParameter gridData)
     }
 }
 
-int copy_grid(float* grid_s, float* grid_d, GridParameter gridData)
+void copy_grid(float* grid_s, float* grid_d, GridParameter gridData)
 {
     for (unsigned int bat = 0; bat < gridData.batch; bat++)
     {
