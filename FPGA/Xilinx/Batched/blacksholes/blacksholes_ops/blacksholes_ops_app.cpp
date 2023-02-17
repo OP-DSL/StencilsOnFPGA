@@ -302,12 +302,12 @@ int main(int argc, char **argv)
 
 		runtime_blacksholes_kernel += std::chrono::duration<double, std::micro>(blacksholes_calc_stop_clk_point - blacksholes_calc_start_clk_point).count();
 
+#ifdef DEBUG_VERBOSE
 		//fetching back result
 		ops_dat_fetch_data_host(dat_current, 0, (char*)(grid_ops_result + offset + 1));
-
 		auto device_to_host_stop_clk_point = std::chrono::high_resolution_clock::now();
-
 		runtime_device_to_host += std::chrono::duration<double, std::micro>(device_to_host_stop_clk_point - blacksholes_calc_stop_clk_point).count();
+#endif
 	}
 
 	auto ops_stop_clk_point = std::chrono::high_resolution_clock::now();
@@ -330,12 +330,12 @@ int main(int argc, char **argv)
 						<< " explicit1_ops_val: " << grid_ops_result[offset + i]<< std::endl;
 		}
 	}
-#endif
+
 	std::cout << "call option[0] price from explicit method: " << get_call_option(grid_u1_cpu, calcParam[0]) << std::endl;
 	std::cout << "call option[0] price from ops explicit method: " << get_call_option(grid_ops_result, calcParam[0]) << std::endl;
 
 	std::cout << "============================================="  << std::endl << std::endl;
-
+#endif
 	
 //	for (int i = 0; i < gridProp.logical_size_x; i++)
 //	{
